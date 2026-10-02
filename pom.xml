@@ -25,10 +25,7 @@
     <spotless.version>2.44.3</spotless.version>
     <spotless.eclipse.version>4.25</spotless.eclipse.version>
     <spotless.eclipse.wtp.version>4.21.0</spotless.eclipse.wtp.version>
-
-    <!-- Colon-free so it's safe in a Windows filename; used in <finalName> below so every local build
-         produces a distinctly-named jar under target/ instead of always overwriting the same file name. -->
-    <maven.build.timestamp.format>yyyyMMdd-HHmmss</maven.build.timestamp.format>
+    <build.helper.version>3.6.1</build.helper.version>
   </properties>
 
   <!--
@@ -127,8 +124,30 @@
   </dependencies>
 
   <build>
-    <finalName>${project.artifactId}-${project.version}-${maven.build.timestamp}</finalName>
+    <!-- Every local build gets a distinctly-named jar under target/ instead of always overwriting the same
+         file name. ${maven.build.timestamp} would be UTC, so the stamp comes from build-helper in local time. -->
+    <finalName>${project.artifactId}-${project.version}-${local.build.timestamp}</finalName>
     <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>${build.helper.version}</version>
+        <executions>
+          <execution>
+            <id>local-build-timestamp</id>
+            <goals>
+              <goal>timestamp-property</goal>
+            </goals>
+            <phase>validate</phase>
+            <configuration>
+              <name>local.build.timestamp</name>
+              <!-- Colon-free so it's safe in a Windows filename -->
+              <pattern>yyyyMMdd-HHmmss</pattern>
+              <timeZone>Europe/Berlin</timeZone>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>biz.aQute.bnd</groupId>
         <artifactId>bnd-maven-plugin</artifactId>
