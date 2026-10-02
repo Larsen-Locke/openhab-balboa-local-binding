@@ -65,6 +65,22 @@ Channels marked _(dynamic)_ are only present if the corresponding equipment is c
 | `aux-<n>` _(dynamic)_  | `Switch`             |    R/W     | Auxiliary output `n`                                        |
 | `blower` _(dynamic)_   | `Switch` or `String` |    R/W     | Blower: `Switch` if one-speed, `String` (`OFF`/`LOW`/`HIGH`) if two-speed |
 | `mister1`/`mister2` _(dynamic)_ | `Switch` or `String` | R/W | Mister: `Switch` if one-speed, `String` (`OFF`/`LOW`/`HIGH`) if two-speed |
+| `target-temperature-high` | `Number:Temperature` | R/W | Desired target temperature of the `HIGH` temperature range, see below |
+| `target-temperature-low` | `Number:Temperature` | R/W | Desired target temperature of the `LOW` temperature range, see below |
+| `temperature-range-switch` | `Switch` | R/W | `temperature-range` as a plain switch: `ON` = `HIGH`, `OFF` = `LOW` |
+| `heat-mode-switch` | `Switch` | R/W | `heat-mode` as a plain switch: `ON` = `READY`, `OFF` = `REST` or `READY_IN_REST` |
+| `last-seen` | `DateTime` | R | When the last message was received from the unit, updated at most every 30 seconds; useful to detect a stale connection (for example with the Expire profile) |
+| `fault-code` | `String` | R | Most recent entry of the unit's fault log, or `NONE` if the log is empty |
+| `fault-time` | `String` | R | When that fault occurred, for example `2 days ago at 14:32` (best effort: the unit only reports the time of day and how many days ago) |
+| `filter-1-start`, `filter-1-duration`, `filter-2-start`, `filter-2-duration` | `String` | R | Start time and duration of the two filter cycles, as `HH:MM` |
+| `filter-2-enabled` | `Contact` | R | Whether filter cycle 2 is enabled (filter cycle 1 cannot be disabled) |
+
+### Target temperature per range
+
+The unit's "set temperature" message has no range selector: it always applies to whichever temperature range is
+currently active, also on the unit's own control panel. `target-temperature-high` and `target-temperature-low` let you
+set a value for each range independently. A value for the range that is not active right now cannot be sent
+immediately, so the binding keeps it and sends it as soon as the unit switches into that range.
 
 ## Full Example
 
