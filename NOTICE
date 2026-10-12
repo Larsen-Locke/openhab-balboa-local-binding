@@ -13,4 +13,9 @@ https://www.eclipse.org/legal/epl-2.0/.
 
 https://github.com/Larsen-Locke/openhab-balboa-local-binding
 
-Originally developed as part of openhab-addons: https://github.com/openhab/openhab-addons
+== Origin
+
+This add-on is based on the Balboa binding written by Carl Önnheim
+(https://github.com/carlonnheim/openhab-addons/tree/balboa). ddempsey3 updated that binding for openHAB 3.0 in
+December 2020. It was ported to openHAB 5.2 and extended by Larsen-Locke. The code remains under the Eclipse Public
+License 2.0, and the license headers of the source files are kept as they are.

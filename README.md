@@ -112,3 +112,10 @@ openHAB core artifacts are resolved from the openHAB JFrog repository configured
 `sat/` holds the rule parameters and general suppressions of openhab-addons.
 
 Drop the resulting `target/io.github.larsenlocke.binding.balboa-*.jar` into your openHAB `addons/` folder and remove any previous `io.github.larsenlocke.binding.balboa-*.jar` from it first.
+
+## Origin and License
+
+This binding is based on the Balboa binding written by [Carl Önnheim](https://github.com/carlonnheim/openhab-addons/tree/balboa).
+[ddempsey3](https://github.com/ddempsey3) updated it for openHAB 3.0 in December 2020, and it was ported to openHAB 5.2 and extended by Larsen-Locke.
+
+It is licensed under the [Eclipse Public License 2.0](LICENSE). The source files keep the openHAB license header, which the code checks in `sat/` require, and the `NOTICE` file shipped in the jar states the origin.
