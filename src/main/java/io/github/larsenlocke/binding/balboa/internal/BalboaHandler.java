@@ -71,6 +71,9 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     private PollingJob pollingJob = new PollingJob();
     // This detects a unit that has silently disappeared (no FIN/RST, e.g. powered off) and forces a reconnect.
     private WatchdogJob watchdogJob = new WatchdogJob();
+    // This forces a reconnect if the unit does not answer the configuration request, since the jobs above only run once
+    // the unit is configured.
+    private ConfigurationTimeoutJob configurationTimeoutJob = new ConfigurationTimeoutJob();
 
     /**
      * Helper class providing a thread safe reconnection mechanism.
@@ -244,6 +247,55 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
         }
     }
 
+    /**
+     * Helper class forcing a reconnect if the unit does not answer the configuration request in time. The polling and
+     * the watchdog only run once the unit is configured, so without this a connection on which the request was lost
+     * (or never sent) would stay on CONFIGURATION_PENDING forever.
+     *
+     * @author Carsten Mogge
+     *
+     */
+    private class ConfigurationTimeoutJob implements Runnable {
+        // The unit normally answers within a fraction of a second, this only has to be safely longer than that.
+        private static final long TIMEOUT_SECONDS = 60;
+
+        private @Nullable ScheduledFuture<?> job;
+
+        /**
+         * Starts the timeout if not already active.
+         */
+        public synchronized void start() {
+            if (job == null) {
+                job = scheduler.schedule(this, TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            }
+        }
+
+        /**
+         * Stops the timeout if active.
+         */
+        public synchronized void stop() {
+            if (job != null) {
+                job.cancel(true);
+                job = null;
+            }
+        }
+
+        /**
+         * Forces a reconnect if the unit is still waiting for its configuration.
+         */
+        @Override
+        public void run() {
+            if (getThing().getStatus() == ThingStatus.ONLINE
+                    && getThing().getStatusInfo().getStatusDetail() == ThingStatusDetail.CONFIGURATION_PENDING) {
+                logger.warn("No configuration received from the Balboa unit within {} seconds, reconnecting",
+                        TIMEOUT_SECONDS);
+                // This triggers onStateChange(OFFLINE, ...), which in turn schedules a reconnect with backoff, since
+                // the backoff is only reset once the unit is configured.
+                protocol.disconnect();
+            }
+        }
+    }
+
     // We keep all channels in a hash map. It is easier to treat all channels the same way, since the majority are
     // dynamic. This is read from the framework's command-handling thread (handleCommand) and written/iterated
     // from the protocol's callback thread (onMessage, e.g. when the channel set is rebuilt after a reconnect) -
@@ -315,9 +367,10 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      */
     @Override
     public void dispose() {
-        // Stop any active polling and watchdog jobs
+        // Stop any active polling, watchdog and configuration timeout jobs
         pollingJob.stop();
         watchdogJob.stop();
+        configurationTimeoutJob.stop();
 
         // Disallow reconnect attempts and disconnect
         reconnectJob.disable();
@@ -354,9 +407,10 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      */
     @Override
     public void onStateChange(Status status, String detail) {
-        // Stop any active polling and watchdog jobs before handling status transitions
+        // Stop any active polling, watchdog and configuration timeout jobs before handling status transitions
         pollingJob.stop();
         watchdogJob.stop();
+        configurationTimeoutJob.stop();
 
         // Handle the status transition
         switch (status) {
@@ -367,6 +421,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 // Report back to the framework that we are waiting for configuration of the unit.
                 logger.debug("Balboa Protocol Pending Ponfiguration: {}", detail);
                 updateStatus(ThingStatus.ONLINE, ThingStatusDetail.CONFIGURATION_PENDING, detail);
+                // The unit has to answer the configuration request, otherwise reconnect
+                configurationTimeoutJob.start();
                 break;
             case ERROR:
                 // Report back to the framework that we have an error. Schedule a reconnect
