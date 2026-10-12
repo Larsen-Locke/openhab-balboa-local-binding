@@ -115,7 +115,9 @@ Drop the resulting `target/io.github.larsenlocke.binding.balboa-*.jar` into your
 
 ## Origin and License
 
-This binding is based on the Balboa binding written by [Carl Önnheim](https://github.com/carlonnheim/openhab-addons/tree/balboa).
-[ddempsey3](https://github.com/ddempsey3) updated it for openHAB 3.0 in December 2020, and it was ported to openHAB 5.2 and extended by Larsen-Locke.
+This binding is based on the Balboa binding written by [Carl Önnheim](https://github.com/carlonnheim/openhab-addons/tree/balboa) in 2020.
+[ddempsey3](https://github.com/ddempsey3/openhab-addons/tree/balboa-3) updated it for openHAB 3.0 in December 2020, and this binding continues from that version: it was ported to openHAB 5.2 and extended by Larsen-Locke.
 
-It is licensed under the [Eclipse Public License 2.0](LICENSE). The source files keep the openHAB license header, which the code checks in `sat/` require, and the `NOTICE` file shipped in the jar states the origin.
+Balboa does not publish the protocol of its Wi-Fi module. The message layouts of the fault log and the filter cycles are taken from the community protocol documentation of [ccutrer/balboa_worldwide_app](https://github.com/ccutrer/balboa_worldwide_app) (`doc/protocol.md`).
+
+It is licensed under the [Eclipse Public License 2.0](LICENSE), like the original binding. The source files keep the openHAB license header, which the code checks in `sat/` require, and the `NOTICE` file shipped in the jar states the origin.
