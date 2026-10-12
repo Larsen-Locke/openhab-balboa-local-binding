@@ -74,6 +74,9 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     // This forces a reconnect if the unit does not answer the configuration request, since the jobs above only run once
     // the unit is configured.
     private ConfigurationTimeoutJob configurationTimeoutJob = new ConfigurationTimeoutJob();
+    // Set while this handler is disposed, so a late callback from the protocol (for example the disconnect that
+    // dispose() itself triggers) does not try to update the status of a thing this handler no longer handles.
+    private volatile boolean disposed = false;
 
     /**
      * Helper class providing a thread safe reconnection mechanism.
@@ -338,6 +341,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      */
     @Override
     public void initialize() {
+        // The same handler instance is initialized again after a dispose when the thing is updated
+        disposed = false;
 
         // Initialize the status as UNKNOWN. The protocol will update the status in callbacks.
         updateStatus(ThingStatus.UNKNOWN);
@@ -367,6 +372,9 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      */
     @Override
     public void dispose() {
+        // From here on protocol callbacks must not touch the thing status anymore
+        disposed = true;
+
         // Stop any active polling, watchdog and configuration timeout jobs
         pollingJob.stop();
         watchdogJob.stop();
@@ -411,6 +419,12 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
         pollingJob.stop();
         watchdogJob.stop();
         configurationTimeoutJob.stop();
+
+        // A disposed handler must not report anything to the framework, it would only log a warning
+        if (disposed) {
+            logger.debug("Ignoring protocol status {} ({}) after the handler was disposed", status, detail);
+            return;
+        }
 
         // Handle the status transition
         switch (status) {
