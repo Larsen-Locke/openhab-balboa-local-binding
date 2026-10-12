@@ -12,6 +12,42 @@
   <name>Balboa Binding</name>
   <description>openHAB binding for Balboa spa / hot tub control units (BWA Wi-Fi module 50350 and compatible) over the local network, without the Balboa cloud.</description>
 
+  <licenses>
+    <license>
+      <name>Eclipse Public License 2.0</name>
+      <url>https://www.eclipse.org/legal/epl-2.0/</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>Larsen-Locke</id>
+      <url>https://github.com/Larsen-Locke</url>
+      <roles>
+        <role>maintainer</role>
+        <role>port to openHAB 5.2 and extensions</role>
+      </roles>
+    </developer>
+  </developers>
+
+  <contributors>
+    <contributor>
+      <name>Carl Önnheim</name>
+      <url>https://github.com/carlonnheim/openhab-addons/tree/balboa</url>
+      <roles>
+        <role>original author of the Balboa binding</role>
+      </roles>
+    </contributor>
+    <contributor>
+      <name>ddempsey3</name>
+      <url>https://github.com/ddempsey3/openhab-addons/tree/balboa-3</url>
+      <roles>
+        <role>updated the binding for openHAB 3.0, the version this one continues from</role>
+      </roles>
+    </contributor>
+  </contributors>
+
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.source>21</maven.compiler.source>
