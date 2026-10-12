@@ -17,6 +17,9 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousSocketChannel;
 import java.nio.channels.CompletionHandler;
+import java.nio.channels.NotYetConnectedException;
+import java.nio.channels.ShutdownChannelGroupException;
+import java.nio.channels.WritePendingException;
 import java.util.HexFormat;
 import java.util.LinkedList;
 
@@ -240,6 +243,9 @@ public class BalboaProtocol {
          */
         synchronized public void reset() {
             queue.clear();
+            // A write started on the previous connection never reports back to this writer in a useful way, so it
+            // must not keep the writer busy for the next connection.
+            writeInProgress = false;
         }
 
         /**
@@ -291,9 +297,10 @@ public class BalboaProtocol {
             // Queue the item if writing is already in progress
             if (writeInProgress) {
                 if (queue.size() >= MAX_QUEUE_SIZE) {
-                    // The write session has been stuck for a while (the watchdog will eventually notice
-                    // the accompanying read silence and force a reconnect). Drop the new message instead
-                    // of growing the queue without bound.
+                    // The write session has been stuck for a while (the watchdog, or the configuration timeout
+                    // while the unit is not configured yet, will eventually notice the accompanying read
+                    // silence and force a reconnect). Drop the new message instead of growing the queue without
+                    // bound.
                     logger.warn(
                             "Outgoing message queue is full ({} messages), dropping message - the connection may be stuck",
                             MAX_QUEUE_SIZE);
@@ -304,12 +311,33 @@ public class BalboaProtocol {
                 // Otherwise start writing
                 logger.trace("Write session started");
                 writeInProgress = true;
-                socket.write(buffer, buffer, this);
+                write(buffer);
             } else {
                 // Not connected right now (e.g. offline or reconnecting). There is nothing to send this on, and
                 // whoever triggered this (e.g. a command sent to a channel while the unit is unreachable) has no
                 // way to react to an exception here, so just drop the message instead of failing loudly.
                 logger.debug("Discarding outgoing message, not connected");
+            }
+        }
+
+        /**
+         * Starts an asynchronous write on the socket. The write can also throw synchronously, for example a
+         * NotYetConnectedException while a connect attempt is still running. Neither completed() nor failed() is
+         * called then, so the busy flag has to be cleared here, otherwise the writer would never send anything again.
+         *
+         * @param buffer The buffer to write
+         */
+        synchronized private void write(ByteBuffer buffer) {
+            AsynchronousSocketChannel channel = socket;
+            if (channel == null) {
+                writeInProgress = false;
+                return;
+            }
+            try {
+                channel.write(buffer, buffer, this);
+            } catch (NotYetConnectedException | WritePendingException | ShutdownChannelGroupException e) {
+                writeInProgress = false;
+                logger.debug("Discarding outgoing message, the write could not be started: {}", e.toString());
             }
         }
 
@@ -323,7 +351,7 @@ public class BalboaProtocol {
             if (buffer.position() < buffer.limit()) {
                 logger.trace("Partial write, resuming");
                 if (socket != null) {
-                    socket.write(buffer, buffer, this);
+                    write(buffer);
                     return;
                 } else {
                     // This cannot happen ("failed" would be called instead), but handled for style
@@ -341,7 +369,7 @@ public class BalboaProtocol {
                 logger.trace("Message queued, write session continued");
                 ByteBuffer b = queue.remove();
                 if (socket != null) {
-                    socket.write(b, b, this);
+                    write(b);
                 } else {
                     // This cannot happen ("failed" would be called instead), but handled for style
                     writeInProgress = false;
