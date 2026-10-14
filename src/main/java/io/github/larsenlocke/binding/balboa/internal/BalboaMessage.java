@@ -1,12 +1,12 @@
 /*
  * Copyright (c) 2010-2026 Contributors to the openHAB project
+ * Copyright (c) 2026 Larsen-Locke and contributors
  *
- * See the NOTICE file(s) distributed with this work for additional
- * information.
+ * See the NOTICE file distributed with this work for additional information.
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Public License 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0
+ * https://www.eclipse.org/legal/epl-2.0
  *
  * SPDX-License-Identifier: EPL-2.0
  */
@@ -50,7 +50,7 @@ public class BalboaMessage {
     /**
      * The {@link ItemType} enumerates the items that can be read and potentially also toggled.
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     public enum ItemType {
@@ -86,7 +86,7 @@ public class BalboaMessage {
     /**
      * All messages provide a message type code
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     static private interface Message {
@@ -96,7 +96,7 @@ public class BalboaMessage {
     /**
      * Messages which can be sent to the unit implement this interface.
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     static protected interface Outbound extends Message {
@@ -150,7 +150,7 @@ public class BalboaMessage {
         /**
          * Enumerates the differnt types of settings that can be requested
          *
-         * @author CarlÖnnheim
+         * @author Carl Önnheim
          *
          */
         public enum SettingsType {
@@ -743,7 +743,7 @@ public class BalboaMessage {
      * The payload layout is not documented by Balboa. It is taken from community protocol documentation
      * (ccutrer/balboa_worldwide_app), cross-checked against other open source Balboa implementations.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     static public class FilterCyclesResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
         public static final int MESSAGE_TYPE = 0x0abf23;
@@ -833,7 +833,7 @@ public class BalboaMessage {
      * The payload layout is not documented by Balboa. It is taken from community protocol documentation
      * (ccutrer/balboa_worldwide_app), cross-checked against other open source Balboa implementations.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     static public class FaultLogResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
         public static final int MESSAGE_TYPE = 0x0abf28;

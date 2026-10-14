@@ -1,12 +1,12 @@
 /*
  * Copyright (c) 2010-2026 Contributors to the openHAB project
+ * Copyright (c) 2026 Larsen-Locke and contributors
  *
- * See the NOTICE file(s) distributed with this work for additional
- * information.
+ * See the NOTICE file distributed with this work for additional information.
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Public License 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0
+ * https://www.eclipse.org/legal/epl-2.0
  *
  * SPDX-License-Identifier: EPL-2.0
  */
@@ -81,7 +81,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     /**
      * Helper class providing a thread safe reconnection mechanism.
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     private class ReconnectJob implements Runnable {
@@ -157,7 +157,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     /**
      * Helper class providing a thread safe polling mechanism.
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     private class PollingJob implements Runnable {
@@ -203,7 +203,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      * Helper class detecting a unit that has gone silent without the socket noticing (no FIN/RST is sent if e.g. the
      * Wi-Fi module simply loses power), by periodically checking how long it has been since anything was received.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      *
      */
     private class WatchdogJob implements Runnable {
@@ -255,7 +255,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      * the watchdog only run once the unit is configured, so without this a connection on which the request was lost
      * (or never sent) would stay on CONFIGURATION_PENDING forever.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      *
      */
     private class ConfigurationTimeoutJob implements Runnable {
@@ -654,7 +654,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     /**
      * Channels exposed by the Balboa Unit are handled by classes implementing the {@link BalboaChannel} interface.
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     private interface BalboaChannel {
@@ -690,7 +690,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     /**
      * Base class for channels, implementing common logic
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     private abstract class BaseBalboaChannel implements BalboaChannel {
@@ -783,7 +783,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     /**
      * Handles One-Speed toggle items
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     private class OneSpeedToggle extends BaseBalboaChannel {
@@ -845,7 +845,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     /**
      * Handles Two-Speed toggle items
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     private class TwoSpeedToggle extends BaseBalboaChannel {
@@ -1272,7 +1272,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      * Handles the fault code channel, showing the most recent entry from the Balboa unit's fault log (a numeric
      * code, e.g. "sensor A fault" or "low flow"), or "NONE" if the log is empty.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     private class FaultCodeChannel extends BaseBalboaChannel {
         // Maps the numeric fault/message codes used in the fault log to a short, readable description. Codes not
@@ -1339,7 +1339,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      * Handles the fault time channel, showing when the most recent fault log entry occurred (best effort - the
      * unit only reports "days ago" plus a time of day, not an exact date), or "-" if the log is empty.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     private class FaultTimeChannel extends BaseBalboaChannel {
         protected FaultTimeChannel() {
@@ -1383,7 +1383,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      * does not depend on the message content. Useful to detect a stale connection independently of the binding's
      * own watchdog, e.g. via the Expire binding/profile.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     private class LastSeenChannel extends BaseBalboaChannel {
         // Minimum time between two state updates. The unit can report a new message several times a minute while
@@ -1433,7 +1433,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     /**
      * Selects which field of a filter cycle a {@link FilterCycleTimeChannel} reports.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     private enum FilterCycleField {
         START,
@@ -1444,7 +1444,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      * Handles the filter cycle start/duration channels (four of these are instantiated: start and duration, for
      * filter cycles 1 and 2).
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     private class FilterCycleTimeChannel extends BaseBalboaChannel {
         private final int cycle;
@@ -1493,7 +1493,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     /**
      * Handles the filter cycle 2 enabled channel. Filter cycle 1 has no such flag - it is always active.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     private class Filter2EnabledChannel extends BaseBalboaChannel {
         protected Filter2EnabledChannel() {
@@ -1533,7 +1533,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      * message instead of relying on {@link BalboaHandler#temperatureHighRange} (channel iteration order across
      * {@link ChannelMap} is not guaranteed, so that field is not necessarily fresh yet when this runs).
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     private class TemperatureRangeSwitch extends BaseBalboaChannel {
         private boolean highRange;
@@ -1578,7 +1578,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      * directly to this channel instead of needing a second item bound to the String-valued {@link HeatMode} channel
      * through a profile - see {@link TemperatureRangeSwitch} for why that pattern is best avoided.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     private class HeatModeSwitch extends BaseBalboaChannel {
         private byte rawState;
@@ -1634,7 +1634,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      * regardless of which range happens to be active right now - unlike the plain {@code target-temperature}
      * channel, which always reflects the live target of whatever range is currently active.
      *
-     * @author Carsten Mogge
+     * @author Larsen-Locke
      */
     private class DesiredTemperatureChannel extends BaseBalboaChannel {
         private final boolean highRange;

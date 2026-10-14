@@ -120,6 +120,8 @@ This binding is based on the Balboa binding written by [Carl Önnheim](https://g
 
 Balboa does not publish the protocol of its Wi-Fi module. The message layouts of the fault log and the filter cycles are taken from the community protocol documentation of [ccutrer/balboa_worldwide_app](https://github.com/ccutrer/balboa_worldwide_app) (`doc/protocol.md`).
 
-It is licensed under the [Eclipse Public License 2.0](LICENSE), like the original binding. The source files keep the openHAB license header, which the code checks in `sat/` require, and the `NOTICE` file shipped in the jar states the origin.
+It is licensed under the [Eclipse Public License 2.0](LICENSE), like the original binding. The source files keep the copyright line of the openHAB contributors next to the one of Larsen-Locke and contributors, and the `NOTICE` file shipped in the jar states the origin.
 
 This is an independent project. It is not affiliated with, authorized or endorsed by Balboa Water Group; "Balboa" is a name of its respective owner.
+
+Most of the code changed since the port, the tests and the documentation were written with the help of an AI coding assistant (Claude by Anthropic). The maintainer reviews the changes and tests every release on real hardware before publishing it.

@@ -1,12 +1,12 @@
 /*
  * Copyright (c) 2010-2026 Contributors to the openHAB project
+ * Copyright (c) 2026 Larsen-Locke and contributors
  *
- * See the NOTICE file(s) distributed with this work for additional
- * information.
+ * See the NOTICE file distributed with this work for additional information.
  *
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Public License 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0
+ * https://www.eclipse.org/legal/epl-2.0
  *
  * SPDX-License-Identifier: EPL-2.0
  */
@@ -90,7 +90,7 @@ public class BalboaProtocol {
      * OFFLINE: ERROR, CONNECTING
      * ERROR: CONNECTING
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     public enum Status {
@@ -106,7 +106,7 @@ public class BalboaProtocol {
      * Callback interface for Handlers. The handlers receive callbacks when the protocol state changes and when messages
      * are received
      *
-     * @author CarlÖnnheim
+     * @author Carl Önnheim
      *
      */
     public interface Handler {
