@@ -586,6 +586,18 @@ public class BalboaProtocol {
     }
 
     /**
+     * Builds a translatable thing status description: {@code @text/<key> ["arg", ...]}. Quotes inside an argument
+     * would end it early, so they are replaced.
+     */
+    static String text(String key, String... args) {
+        StringBuilder text = new StringBuilder("@text/").append(key);
+        for (int i = 0; i < args.length; i++) {
+            text.append(i == 0 ? " [\"" : ", \"").append(args[i].replace("\"", "'")).append('"');
+        }
+        return args.length == 0 ? text.toString() : text.append(']').toString();
+    }
+
+    /**
      * Sets the status internally and invokes the callback.
      *
      * @param status The status to set
@@ -645,14 +657,14 @@ public class BalboaProtocol {
         try {
             hostAddress = new InetSocketAddress(host, port);
         } catch (Exception e) {
-            setStatus(Status.ERROR, e.toString());
+            setStatus(Status.ERROR, text("offline.conf-error.invalid-address", e.toString()));
             return;
         }
 
         // Check that the resolution was successful
         if (hostAddress.isUnresolved()) {
             logger.debug("Failed to resolve host: {}", host);
-            setStatus(Status.ERROR, String.format("Failed to resolve %s", host));
+            setStatus(Status.ERROR, text("offline.conf-error.unresolved-host", host));
             return;
         }
 
@@ -662,7 +674,7 @@ public class BalboaProtocol {
         } catch (IOException e) {
             logger.debug("Socket creation failed: {}", e.getMessage());
             // Not a configuration problem: report it like a failed connect, which also schedules the reconnect
-            setStatus(Status.OFFLINE, e.toString());
+            setStatus(Status.OFFLINE, text("offline.comm-error.connection-failed-detail", e.toString()));
             return;
         }
         if (socket != null) {
@@ -677,7 +689,7 @@ public class BalboaProtocol {
                     // channels have a value right after connecting instead of waiting for the first poll.
                     writer.sendMessage(new BalboaMessage.SettingsRequestMessage(SettingsType.FILTER_CYCLES));
                     writer.sendMessage(new BalboaMessage.SettingsRequestMessage(SettingsType.FAULT_LOG));
-                    setStatus(Status.CONFIGURATION_PENDING, "Configuration request sent");
+                    setStatus(Status.CONFIGURATION_PENDING, text("online.configuration-pending"));
 
                     // Start the reader
                     reader.start();
@@ -691,9 +703,9 @@ public class BalboaProtocol {
                     // between OFFLINE and a configuration error on every failed retry.
                     String detail;
                     if (exc == null) {
-                        detail = "Connection Failed";
+                        detail = text("offline.comm-error.connection-failed");
                     } else {
-                        detail = String.format("Connection Failed: %s", exc.getMessage());
+                        detail = text("offline.comm-error.connection-failed-detail", String.valueOf(exc.getMessage()));
                     }
                     logger.debug("{}", detail);
                     setStatus(Status.OFFLINE, detail);
@@ -731,6 +743,6 @@ public class BalboaProtocol {
         reader.reset();
         writer.reset();
 
-        setStatus(Status.OFFLINE, "Disconnected");
+        setStatus(Status.OFFLINE, text("offline.comm-error.disconnected"));
     }
 }

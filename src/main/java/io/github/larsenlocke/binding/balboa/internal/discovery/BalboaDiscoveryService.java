@@ -130,7 +130,8 @@ public class BalboaDiscoveryService extends AbstractDiscoveryService {
         properties.put("port", BalboaBindingConstants.DEFAULT_PORT);
         properties.put("uniqueID", macAddress);
 
-        String label = hostname.isBlank() ? ("Balboa Spa (" + host + ")") : ("Balboa Spa (" + hostname + ")");
+        String name = hostname.isBlank() ? host : hostname;
+        String label = "@text/discovery.balboa.spa.label [\"" + name.replace("\"", "'") + "\"]";
 
         DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(thingUID).withProperties(properties)
                 .withRepresentationProperty("uniqueID").withLabel(label).build();
