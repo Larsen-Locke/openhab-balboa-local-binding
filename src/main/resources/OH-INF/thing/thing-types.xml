@@ -194,7 +194,7 @@
 		<description>Temperature Scale</description>
 		<state>
 			<options>
-				<option value="C">Celcius</option>
+				<option value="C">Celsius</option>
 				<option value="F">Fahrenheit</option>
 			</options>
 		</state>
@@ -212,7 +212,7 @@
 	</channel-type>
 	<channel-type id="temperature-range-switch">
 		<item-type>Switch</item-type>
-		<label>Temperature Range (Switch)</label>
+		<label>Temp. Range (Switch)</label>
 		<description>Temperature Range as a plain Switch (ON = High, OFF = Low), for linking a Switch item directly
 			without a
 			second item and a profile.</description>
@@ -265,7 +265,7 @@
 	</channel-type>
 	<channel-type id="filter2-enabled">
 		<item-type>Contact</item-type>
-		<label>Filter Cycle 2 Enabled</label>
+		<label>Filter 2 Enabled</label>
 		<description>Whether the second filter cycle is enabled at all. Filter cycle 1 cannot be disabled.</description>
 		<state readOnly="true"/>
 	</channel-type>

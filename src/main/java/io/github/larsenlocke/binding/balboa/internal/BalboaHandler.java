@@ -1474,7 +1474,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      */
     private class Filter2EnabledChannel extends BaseBalboaChannel {
         protected Filter2EnabledChannel() {
-            super("filter-2-enabled", "Filter Cycle 2 Enabled", "filter2-enabled", "Contact");
+            super("filter-2-enabled", "Filter 2 Enabled", "filter2-enabled", "Contact");
         }
 
         /**
@@ -1514,7 +1514,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
         private boolean highRange;
 
         protected TemperatureRangeSwitch() {
-            super("temperature-range-switch", "Temperature Range (Switch)", "temperature-range-switch", "Switch");
+            super("temperature-range-switch", "Temp. Range (Switch)", "temperature-range-switch", "Switch");
         }
 
         /**
