@@ -19,6 +19,7 @@ import java.net.InetAddress;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -105,7 +106,7 @@ public class BalboaDiscoveryService extends AbstractDiscoveryService {
     private void handleResponse(DatagramPacket response) {
         String payload = new String(response.getData(), response.getOffset(), response.getLength(),
                 StandardCharsets.US_ASCII);
-        if (!payload.toUpperCase().contains("BWGS")) {
+        if (!payload.toUpperCase(Locale.ROOT).contains("BWGS")) {
             // Not a Balboa Wi-Fi module response, ignore.
             return;
         }

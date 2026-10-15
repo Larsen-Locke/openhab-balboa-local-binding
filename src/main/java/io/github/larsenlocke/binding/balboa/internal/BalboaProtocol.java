@@ -198,7 +198,7 @@ public class BalboaProtocol {
      * @param buffer Shall contain a full message, including start and stop bytes.
      * @return the CRC value, which is to be stored in the second last position of the buffer on complete messages.
      */
-    private static byte calculateCrc(byte[] buffer) {
+    static byte calculateCrc(byte[] buffer) {
         // Initialisation value
         byte crc = INIT;
         // Start from the length byte (start + 1), exclude the last two bytes (CRC and stop byte)
@@ -207,6 +207,16 @@ public class BalboaProtocol {
         }
         // Final xor and return
         return (byte) (crc ^ FINAL_XOR);
+    }
+
+    /**
+     * Decodes bytes as if they had been received from the unit. Lets the tests exercise the message framing without
+     * a socket.
+     *
+     * @param data the received bytes
+     */
+    void receive(byte[] data) {
+        reader.receive(data);
     }
 
     /**
@@ -234,14 +244,14 @@ public class BalboaProtocol {
         // notices the silence and forces a reconnect.
         private static final int MAX_QUEUE_SIZE = 32;
 
-        private LinkedList<ByteBuffer> queue = new LinkedList<ByteBuffer>();;
+        private LinkedList<ByteBuffer> queue = new LinkedList<ByteBuffer>();
         private boolean writeInProgress = false;
 
         /**
          * Resets a {@link BalboaProtocol.Writer}, should be called between connects (clears the queue).
          *
          */
-        synchronized public void reset() {
+        public synchronized void reset() {
             queue.clear();
             // A write started on the previous connection never reports back to this writer in a useful way, so it
             // must not keep the writer busy for the next connection.
@@ -254,7 +264,6 @@ public class BalboaProtocol {
          * @param message
          */
         public void sendMessage(BalboaMessage.Outbound message) {
-
             // Get the payload
             byte[] payload = message.getPayload();
 
@@ -274,9 +283,7 @@ public class BalboaProtocol {
             buffer[3] = (byte) ((mt >> 8) & 0xFF);
             buffer[4] = (byte) (mt & 0xFF);
             // The payload
-            for (int i = 0; i < payload.length; i++) {
-                buffer[i + 5] = payload[i];
-            }
+            System.arraycopy(payload, 0, buffer, 5, payload.length);
             // CRC
             buffer[messageLength] = calculateCrc(buffer);
             // Message end
@@ -292,8 +299,7 @@ public class BalboaProtocol {
          *
          * @param buffer The buffer to write
          */
-        synchronized private void startWrite(ByteBuffer buffer) {
-
+        private synchronized void startWrite(ByteBuffer buffer) {
             // Queue the item if writing is already in progress
             if (writeInProgress) {
                 if (queue.size() >= MAX_QUEUE_SIZE) {
@@ -327,7 +333,7 @@ public class BalboaProtocol {
          *
          * @param buffer The buffer to write
          */
-        synchronized private void write(ByteBuffer buffer) {
+        private synchronized void write(ByteBuffer buffer) {
             AsynchronousSocketChannel channel = socket;
             if (channel == null) {
                 writeInProgress = false;
@@ -346,7 +352,7 @@ public class BalboaProtocol {
          * if any.
          */
         @Override
-        synchronized public void completed(@Nullable Integer result, ByteBuffer buffer) {
+        public synchronized void completed(@Nullable Integer result, ByteBuffer buffer) {
             // Check if the message was written in full, otherwise resume the write
             if (buffer.position() < buffer.limit()) {
                 logger.trace("Partial write, resuming");
@@ -378,7 +384,7 @@ public class BalboaProtocol {
         }
 
         @Override
-        synchronized public void failed(@Nullable Throwable exc, ByteBuffer buffer) {
+        public synchronized void failed(@Nullable Throwable exc, ByteBuffer buffer) {
             // Something failed. Disconnect the protocol
             writeInProgress = false;
             disconnect();
@@ -400,7 +406,7 @@ public class BalboaProtocol {
          * Resets a {@link BalboaProtocol.Reader}, should be called between connects
          *
          */
-        synchronized public void reset() {
+        public synchronized void reset() {
             readBuffer.clear();
         }
 
@@ -419,11 +425,31 @@ public class BalboaProtocol {
             // Any successful read, however small, proves the unit is still there.
             lastActivity = System.currentTimeMillis();
 
+            processBuffer();
+
+            // Start a new read (wait for more data)
+            start();
+        }
+
+        /**
+         * Feeds bytes into the read buffer as if they had just been read from the socket, and decodes them.
+         *
+         * @param data the received bytes
+         */
+        void receive(byte[] data) {
+            readBuffer.put(data);
+            processBuffer();
+        }
+
+        /**
+         * Decodes all complete messages in the read buffer and keeps an incomplete one for the next read.
+         */
+        private void processBuffer() {
             // Limit the buffer at the end of the read and rewind to the start of the buffer.
             readBuffer.limit(readBuffer.position());
             readBuffer.rewind();
 
-            logger.trace("{} bytes from Balboa Unit, buffer has {} bytes: {}", result, readBuffer.remaining(),
+            logger.trace("Buffer from Balboa Unit has {} bytes: {}", readBuffer.remaining(),
                     HEX_FORMAT.formatHex(readBuffer.array(), 0, readBuffer.remaining()));
 
             // Decode messages (there may be more than one)
@@ -519,9 +545,6 @@ public class BalboaProtocol {
                 // Otherwise start from scratch
                 readBuffer.clear();
             }
-
-            // Start a new read (wait for more data)
-            start();
         }
 
         /**
@@ -601,7 +624,6 @@ public class BalboaProtocol {
      * @param port the port to connect to.
      */
     public synchronized void connect(String host, int port) {
-
         // Do nothing if a connection is already in progress
         if (status == Status.CONNECTING) {
             return;
@@ -639,7 +661,8 @@ public class BalboaProtocol {
             socket = AsynchronousSocketChannel.open();
         } catch (IOException e) {
             logger.debug("Socket creation failed: {}", e.getMessage());
-            handler.onStateChange(Status.ERROR, e.toString());
+            // Not a configuration problem: report it like a failed connect, which also schedules the reconnect
+            setStatus(Status.OFFLINE, e.toString());
             return;
         }
         if (socket != null) {
@@ -689,7 +712,6 @@ public class BalboaProtocol {
      *
      */
     public synchronized void disconnect() {
-
         if (socket != null) {
             // Close the socket. Not much to do with any errors here.
             try {

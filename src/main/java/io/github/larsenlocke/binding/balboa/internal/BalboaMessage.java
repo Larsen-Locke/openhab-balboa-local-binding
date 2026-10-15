@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
 @NonNullByDefault
 public class BalboaMessage {
 
-    private static final Logger logger = LoggerFactory.getLogger(BalboaMessage.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(BalboaMessage.class);
     private static final HexFormat HEX_FORMAT = HexFormat.of().withUpperCase();
 
     // Each subclass will override these
@@ -89,7 +89,7 @@ public class BalboaMessage {
      * @author Carl Önnheim
      *
      */
-    static private interface Message {
+    private static interface Message {
         public int getMessageType();
     }
 
@@ -99,7 +99,7 @@ public class BalboaMessage {
      * @author Carl Önnheim
      *
      */
-    static protected interface Outbound extends Message {
+    protected static interface Outbound extends Message {
         /**
          * Provides the payload of the message instance.
          *
@@ -114,7 +114,7 @@ public class BalboaMessage {
      * @author Carl Önnheim
      *
      */
-    static protected interface Inbound extends Message {
+    protected static interface Inbound extends Message {
     }
 
     /*
@@ -126,16 +126,16 @@ public class BalboaMessage {
      *
      * @author Carl Önnheim - Initial contribution
      */
-    static public class ConfigurationRequestMessage extends BalboaMessage implements BalboaMessage.Outbound {
+    public static class ConfigurationRequestMessage extends BalboaMessage implements BalboaMessage.Outbound {
         public static final int MESSAGE_TYPE = 0x0abf04;
-        static final byte[] payload = new byte[0];
+        static final byte[] PAYLOAD = new byte[0];
 
         /**
          * Payload is empty for this message
          */
         @Override
         public byte[] getPayload() {
-            return payload;
+            return PAYLOAD;
         }
     }
 
@@ -144,7 +144,7 @@ public class BalboaMessage {
      *
      * @author Carl Önnheim - Initial contribution
      */
-    static public class SettingsRequestMessage extends BalboaMessage implements BalboaMessage.Outbound {
+    public static class SettingsRequestMessage extends BalboaMessage implements BalboaMessage.Outbound {
         public static final int MESSAGE_TYPE = 0x0abf22;
 
         /**
@@ -195,7 +195,7 @@ public class BalboaMessage {
      *
      * @author Carl Önnheim - Initial contribution
      */
-    static public class ToggleMessage extends BalboaMessage implements BalboaMessage.Outbound {
+    public static class ToggleMessage extends BalboaMessage implements BalboaMessage.Outbound {
         public static final int MESSAGE_TYPE = 0x0abf11;
         private ItemType type;
         private int index;
@@ -233,7 +233,7 @@ public class BalboaMessage {
      *
      * @author Carl Önnheim - Initial contribution
      */
-    static public class SetTemperatureMessage extends BalboaMessage implements BalboaMessage.Outbound {
+    public static class SetTemperatureMessage extends BalboaMessage implements BalboaMessage.Outbound {
         public static final int MESSAGE_TYPE = 0x0abf20;
         private byte targetTemperature;
 
@@ -292,7 +292,7 @@ public class BalboaMessage {
      *
      * @author Carl Önnheim - Initial contribution
      */
-    static public class SetTemperatureScaleMessage extends BalboaMessage implements BalboaMessage.Outbound {
+    public static class SetTemperatureScaleMessage extends BalboaMessage implements BalboaMessage.Outbound {
         public static final int MESSAGE_TYPE = 0x0abf27;
         private byte scale;
 
@@ -320,7 +320,7 @@ public class BalboaMessage {
      *
      * @author Carl Önnheim - Initial contribution
      */
-    static public class SetTimeMessage extends BalboaMessage implements BalboaMessage.Outbound {
+    public static class SetTimeMessage extends BalboaMessage implements BalboaMessage.Outbound {
         public static final int MESSAGE_TYPE = 0x0abf21;
         private byte hour;
         private byte minute;
@@ -377,7 +377,7 @@ public class BalboaMessage {
      *
      * @author Carl Önnheim - Initial contribution
      */
-    static public class StatusUpdateMessage extends BalboaMessage implements BalboaMessage.Inbound {
+    public static class StatusUpdateMessage extends BalboaMessage implements BalboaMessage.Inbound {
         public static final int MESSAGE_TYPE = 0xffaf13;
         public static final int MESSAGE_LENGTH = 30;
 
@@ -477,7 +477,7 @@ public class BalboaMessage {
             // Byte 33: end mark
 
             // @formatter:off
-            logger.trace(
+            LOGGER.trace(
                     "Status update received {}:{}"
                             + "\n"
                             + "\nPRI: {}\tCEL: {}\t24H: {}\tHGH: {}\tMIS: {}\tCIR: {}"
@@ -509,22 +509,21 @@ public class BalboaMessage {
          * @return
          */
         public byte getItem(ItemType item, int index) {
-
             switch (item) {
                 case PUMP:
-                    if (index < 0 || index > BalboaProtocol.MAX_PUMPS) {
+                    if (index < 0 || index >= BalboaProtocol.MAX_PUMPS) {
                         return 0;
                     } else {
                         return pumps[index];
                     }
                 case AUX:
-                    if (index < 0 || index > BalboaProtocol.MAX_AUX) {
+                    if (index < 0 || index >= BalboaProtocol.MAX_AUX) {
                         return 0;
                     } else {
                         return (byte) (aux[index] ? 0x01 : 0x00);
                     }
                 case LIGHT:
-                    if (index < 0 || index > BalboaProtocol.MAX_LIGHTS) {
+                    if (index < 0 || index >= BalboaProtocol.MAX_LIGHTS) {
                         return 0;
                     } else {
                         return lights[index];
@@ -542,7 +541,7 @@ public class BalboaMessage {
                 case PRIMING:
                     return (byte) (priming ? 0x01 : 0x00);
 
-                // TODO: Understand what these signify and how to handle them.
+                // The meaning of these bits in the status update is not known; their state is not reported.
                 case HEAT_MODE:
                     return 0;
                 case HOLD_MODE:
@@ -606,13 +605,13 @@ public class BalboaMessage {
      *
      * @author Carl Önnheim - Initial contribution
      */
-    static public class InformationResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
+    public static class InformationResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
         public static final int MESSAGE_TYPE = 0x0abf24;
         public static final int MESSAGE_LENGTH = 28;
 
         public InformationResponseMessage(byte[] buffer) {
-            logger.trace("Information Response received");
-            // TODO: Implement the parsing of this message and link to relevant channels.
+            // Not decoded: none of its content is exposed as a channel.
+            LOGGER.trace("Information Response received");
         }
     }
 
@@ -623,7 +622,7 @@ public class BalboaMessage {
      *
      * @author Carl Önnheim - Initial contribution
      */
-    static public class PanelConfigurationResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
+    public static class PanelConfigurationResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
         public static final int MESSAGE_TYPE = 0x0abf2e;
         public static final int MESSAGE_LENGTH = 13;
 
@@ -635,7 +634,6 @@ public class BalboaMessage {
         private byte blower;
 
         public PanelConfigurationResponseMessage(byte[] buffer) {
-
             // Determine the pump configuration
             pumps[0] = (byte) (buffer[5] & 0x03);
             pumps[1] = (byte) ((buffer[5] >> 2) & 0x03);
@@ -643,25 +641,25 @@ public class BalboaMessage {
             pumps[3] = (byte) ((buffer[5] >> 6) & 0x03);
             pumps[4] = (byte) ((buffer[6] >> 2) & 0x03);
             pumps[5] = (byte) ((buffer[6] >> 6) & 0x03);
-            logger.debug("Panel Configuration: byte5..6 {} {}: Pumps {}", Integer.toBinaryString(buffer[5] & 0xFF),
+            LOGGER.debug("Panel Configuration: byte5..6 {} {}: Pumps {}", Integer.toBinaryString(buffer[5] & 0xFF),
                     Integer.toBinaryString(buffer[6] & 0xFF), pumps);
 
             // Determine the lights configuration.
             lights[0] = (byte) (buffer[7] & 0x03);
             lights[1] = (byte) ((buffer[7] >> 6) & 0x03);
-            logger.debug("Panel Configuration: byte7 {}: Lights {}", Integer.toBinaryString(buffer[7] & 0xFF), lights);
+            LOGGER.debug("Panel Configuration: byte7 {}: Lights {}", Integer.toBinaryString(buffer[7] & 0xFF), lights);
 
             // Determine circulation and blower
             blower = (byte) (buffer[8] & 0x03);
             circulation = (byte) ((buffer[8] >> 6) & 0x03);
-            logger.debug("Panel Configuration: byte8 {}: circulation {}, blower {}",
+            LOGGER.debug("Panel Configuration: byte8 {}: circulation {}, blower {}",
                     Integer.toBinaryString(buffer[8] & 0xFF), circulation, blower);
 
             // Determine the aux and mister configuration.
             aux[0] = (buffer[9] & 0x01) != 0;
             aux[1] = (buffer[9] & 0x02) != 0;
             mister = (byte) ((buffer[9] >> 4) & 0x03);
-            logger.debug("Panel Configuration: byte9 {}: AUX {}, mister {}", Integer.toBinaryString(buffer[9] & 0xFF),
+            LOGGER.debug("Panel Configuration: byte9 {}: AUX {}, mister {}", Integer.toBinaryString(buffer[9] & 0xFF),
                     aux, mister);
         }
 
@@ -672,7 +670,7 @@ public class BalboaMessage {
          * @return the configuration byte
          */
         public byte getPump(int i) {
-            if (i < 0 || i > BalboaProtocol.MAX_PUMPS) {
+            if (i < 0 || i >= BalboaProtocol.MAX_PUMPS) {
                 return 0;
             } else {
                 return pumps[i];
@@ -686,7 +684,7 @@ public class BalboaMessage {
          * @return the configuration byte
          */
         public byte getLight(int i) {
-            if (i < 0 || i > BalboaProtocol.MAX_LIGHTS) {
+            if (i < 0 || i >= BalboaProtocol.MAX_LIGHTS) {
                 return 0;
             } else {
                 return lights[i];
@@ -700,7 +698,7 @@ public class BalboaMessage {
          * @return the existence of the aux item
          */
         public boolean getAux(int i) {
-            if (i < 0 || i > BalboaProtocol.MAX_AUX) {
+            if (i < 0 || i >= BalboaProtocol.MAX_AUX) {
                 return false;
             } else {
                 return aux[i];
@@ -745,7 +743,7 @@ public class BalboaMessage {
      *
      * @author Larsen-Locke
      */
-    static public class FilterCyclesResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
+    public static class FilterCyclesResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
         public static final int MESSAGE_TYPE = 0x0abf23;
         public static final int MESSAGE_LENGTH = 15;
 
@@ -776,7 +774,7 @@ public class BalboaMessage {
             durationHour[1] = buffer[11];
             durationMinute[1] = buffer[12];
 
-            logger.trace("Filter Cycles received: 1 {}:{}+{}:{} 2 {}:{}+{}:{} (filter 2 enabled={})", startHour[0],
+            LOGGER.trace("Filter Cycles received: 1 {}:{}+{}:{} 2 {}:{}+{}:{} (filter 2 enabled={})", startHour[0],
                     startMinute[0], durationHour[0], durationMinute[0], startHour[1], startMinute[1], durationHour[1],
                     durationMinute[1], filter2Enabled);
         }
@@ -835,7 +833,7 @@ public class BalboaMessage {
      *
      * @author Larsen-Locke
      */
-    static public class FaultLogResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
+    public static class FaultLogResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
         public static final int MESSAGE_TYPE = 0x0abf28;
         public static final int MESSAGE_LENGTH = 17;
 
@@ -860,7 +858,7 @@ public class BalboaMessage {
             hour = buffer[9];
             minute = buffer[10];
 
-            logger.trace("Fault Log received: count={} code={} daysAgo={} time={}:{}", getFaultCount(), getFaultCode(),
+            LOGGER.trace("Fault Log received: count={} code={} daysAgo={} time={}:{}", getFaultCount(), getFaultCode(),
                     getDaysAgo(), hour, minute);
         }
 
@@ -914,7 +912,7 @@ public class BalboaMessage {
      * @param payload
      */
     private BalboaMessage(int messageType, byte[] payload) {
-        logger.trace("{}",
+        LOGGER.trace("{}",
                 String.format("Unrecognized Message type 0x%x: %s", messageType, HEX_FORMAT.formatHex(payload)));
     }
 
@@ -927,7 +925,7 @@ public class BalboaMessage {
         try {
             // Get the field through introspection, thus returning the overridden values in the subclasses.
             return this.getClass().getField("MESSAGE_TYPE").getInt(null);
-        } catch (Throwable e) {
+        } catch (ReflectiveOperationException e) {
             return 0;
         }
     }
@@ -937,11 +935,14 @@ public class BalboaMessage {
      *
      * @return The expected length of an encoded message
      */
-    static public int getMessageLength(@Nullable Class<? extends BalboaMessage> cls) {
+    public static int getMessageLength(@Nullable Class<? extends BalboaMessage> cls) {
+        if (cls == null) {
+            return 0;
+        }
         try {
             // Get the field through introspection, thus returning the overridden values in the subclasses.
             return cls.getField("MESSAGE_LENGTH").getInt(null);
-        } catch (Throwable e) {
+        } catch (ReflectiveOperationException e) {
             return 0;
         }
     }
@@ -951,8 +952,7 @@ public class BalboaMessage {
      *
      * @return A new {@link BalboaMessage} instance.
      */
-    static public @Nullable BalboaMessage fromBuffer(byte[] buffer) {
-
+    public static @Nullable BalboaMessage fromBuffer(byte[] buffer) {
         // Determine the message type (bitmasking 0xFF effectively treats the bytes as unsigned)
         int messageType = (buffer[2] & 0xFF) << 16 | (buffer[3] & 0xFF) << 8 | (buffer[4] & 0xFF);
 
@@ -964,7 +964,7 @@ public class BalboaMessage {
             // Check that the buffer has the appropriate length
             int expectedLength = getMessageLength(cls);
             if (buffer.length < expectedLength) {
-                logger.debug("Buffer length {} is too short for a {}, need at least {}", buffer.length, cls.getName(),
+                LOGGER.debug("Buffer length {} is too short for a {}, need at least {}", buffer.length, cls.getName(),
                         expectedLength);
                 return null;
             }
@@ -972,8 +972,9 @@ public class BalboaMessage {
             try {
                 // Find the constructor and call it
                 return cls.getConstructor(byte[].class).newInstance(buffer);
-            } catch (Throwable e) {
-                logger.debug("Failed to instantiate {}: {}", cls.getName(), e.getMessage());
+            } catch (ReflectiveOperationException e) {
+                // A constructor that fails on the payload arrives here wrapped in an InvocationTargetException
+                LOGGER.debug("Failed to instantiate {}: {}", cls.getName(), String.valueOf(e.getCause()));
                 return null;
             }
         } else {
@@ -995,21 +996,20 @@ public class BalboaMessage {
      */
     protected void displayUnknownBits(byte[] buffer, byte[] unknown) {
         // No need to prepare the data if it is not going to be traced.
-        if (!logger.isTraceEnabled()) {
+        if (!LOGGER.isTraceEnabled()) {
             return;
         }
 
-        // Consistency check
-        if (unknown.length != buffer.length) {
-            throw new IllegalArgumentException("Buffer and unknown mask must be the same length");
-        }
+        // Older firmware sends shorter messages than the mask describes. Only compare what both cover; this is a
+        // tracing aid and must never make parsing fail.
+        int length = Math.min(unknown.length, buffer.length);
 
         // Determine the message type (bitmasking 0xFF effectively treats the bytes as unsigned)
         int messageType = (buffer[2] & 0xFF) << 16 | (buffer[3] & 0xFF) << 8 | (buffer[4] & 0xFF);
 
         // mask out the known data
-        byte[] masked = new byte[buffer.length];
-        for (int i = 0; i < buffer.length; i++) {
+        byte[] masked = new byte[length];
+        for (int i = 0; i < length; i++) {
             masked[i] = (byte) (buffer[i] & unknown[i]);
         }
 
@@ -1027,6 +1027,9 @@ public class BalboaMessage {
                 if (i >= masked.length) {
                     return;
                 }
+            } else {
+                // Different length (e.g. firmware variants): nothing to compare bit by bit
+                last = null;
             }
         }
 
@@ -1038,7 +1041,7 @@ public class BalboaMessage {
         // A heading line
         s = s.concat("          0        1        2        3        4        5        6        7");
         // Print each byte
-        String s1 = new String("");
+        String s1 = "";
         for (int i = 0; i < masked.length; i++) {
             // Break line every 8 bytes
             if (i % 8 == 0) {
@@ -1054,6 +1057,6 @@ public class BalboaMessage {
             s1 = s1.concat(" ");
         }
         s = s.concat(s1);
-        logger.trace("{}", s);
+        LOGGER.trace("{}", s);
     }
 }

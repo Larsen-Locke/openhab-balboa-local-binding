@@ -12,7 +12,6 @@
  */
 package io.github.larsenlocke.binding.balboa.internal;
 
-import java.time.ZonedDateTime;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -363,7 +362,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
         config = getConfigAs(BalboaConfiguration.class);
 
         // Connect the protocol
-        logger.info("Starting balboa protocol with {} at {}", config.host, config.port);
+        logger.debug("Starting balboa protocol with {} at {}", config.host, config.port);
         protocol.connect(config.host, config.port);
     }
 
@@ -433,7 +432,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 break;
             case CONFIGURATION_PENDING:
                 // Report back to the framework that we are waiting for configuration of the unit.
-                logger.debug("Balboa Protocol Pending Ponfiguration: {}", detail);
+                logger.debug("Balboa Protocol Pending Configuration: {}", detail);
                 updateStatus(ThingStatus.ONLINE, ThingStatusDetail.CONFIGURATION_PENDING, detail);
                 // The unit has to answer the configuration request, otherwise reconnect
                 configurationTimeoutJob.start();
@@ -454,14 +453,14 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 // would appear stuck on UNKNOWN forever, even while reconnect attempts keep happening.
                 if (this.getThing().getStatus() != ThingStatus.OFFLINE) {
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, detail);
-                    logger.info("Balboa Protocol went Offline");
+                    logger.debug("Balboa Protocol went Offline");
                 } else {
                     logger.debug("Balboa Protocol disconnected");
                 }
                 break;
             case ONLINE:
                 updateStatus(ThingStatus.ONLINE);
-                logger.info("Balboa Protocol is Online");
+                logger.debug("Balboa Protocol is Online");
                 // Reset the reconnect backoff now that the connection is confirmed to be working again
                 reconnectJob.resetBackoff();
                 // Start sending poll messages and watching for the unit going silent
@@ -529,7 +528,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
             channels.addChannel(new Filter2EnabledChannel());
 
             // Add pumps based on the configuration message. These can be one- or two-speed (Switch or OFF/LOW/HIGH).
-            // TODO: Two-speed pumps have not been tested (need a user with such items in the unit)
+            // Two-speed pumps are not verified on hardware yet (no unit with one available).
             for (int i = 0; i < BalboaProtocol.MAX_PUMPS; i++) {
                 switch (config.getPump(i)) {
                     // One-speed pump
@@ -546,7 +545,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
             }
 
             // Add lights based on the configuration message. These can be one- or two-level (Switch or OFF/LOW/HIGH).
-            // TODO: Two-level lights have not been tested (need a user with such items in the unit)
+            // Two-level lights are not verified on hardware yet (no unit with one available).
             for (int i = 0; i < BalboaProtocol.MAX_LIGHTS; i++) {
                 switch (config.getLight(i)) {
                     // One-level light
@@ -563,7 +562,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
             }
 
             // Add aux items based on the configuration message. These are always one-speed.
-            // TODO: Not tested (need a user with such items in the unit)
+            // AUX items are not verified on hardware yet (no unit with one available).
             for (int i = 0; i < BalboaProtocol.MAX_AUX; i++) {
                 if (config.getAux(i)) {
                     channels.addChannel(new OneSpeedToggle(ItemType.AUX, i, String.format("aux-%d", i + 1),
@@ -572,7 +571,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
             }
 
             // Blower. These can be one- or two-speed (Switch or OFF/LOW/HIGH).
-            // TODO: Two-speed blowers have not been tested (need a user with such items in the unit).
+            // Two-speed blowers are not verified on hardware yet (no unit with one available).
             switch (config.getBlower()) {
                 // One-speed blower
                 case 0x01:
@@ -587,7 +586,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
             }
 
             // Mister. These can be one- or two-speed (Switch or OFF/LOW/HIGH).
-            // TODO: Two-speed misters have not been tested (need a user with such items in the unit).
+            // Two-speed misters are not verified on hardware yet (no unit with one available).
             switch (config.getMister()) {
                 // One-speed mister
                 case 0x01:
@@ -757,10 +756,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
          */
         @Override
         public void handleCommand(Command command) {
-            if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("Contact channel received update of type {}", command.getClass().getSimpleName());
+            if (!(command instanceof RefreshType)) {
+                logger.debug("Contact channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -819,10 +816,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 if (command != state) {
                     protocol.sendMessage(new BalboaMessage.ToggleMessage(balboaItemType, index));
                 }
-            } else if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("One-speed channel received update of type {}", command.getClass().getSimpleName());
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("One-speed channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -898,10 +893,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 for (int i = 0; i < count; i++) {
                     protocol.sendMessage(new BalboaMessage.ToggleMessage(balboaItemType, index));
                 }
-            } else if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("Two-speed channel received update of type {}", command.getClass().getSimpleName());
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("Two-speed channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -973,10 +966,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                         }
                         break;
                 }
-            } else if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("Heat Mode channel received update of type {}", command.getClass().getSimpleName());
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("Heat Mode channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -1039,10 +1030,9 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                         protocol.sendMessage(new BalboaMessage.SetTemperatureScaleMessage(false));
                         break;
                 }
-            } else if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("Temperature Scale channel received update of type {}", command.getClass().getSimpleName());
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("Temperature Scale channel received update of type {}",
+                        command.getClass().getSimpleName());
             }
         }
 
@@ -1098,10 +1088,9 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                         }
                         break;
                 }
-            } else if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("Temperature Range channel received update of type {}", command.getClass().getSimpleName());
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("Temperature Range channel received update of type {}",
+                        command.getClass().getSimpleName());
             }
         }
 
@@ -1175,10 +1164,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                     protocol.sendMessage(new BalboaMessage.SetTemperatureMessage(target.doubleValue(), celciusDisplay,
                             temperatureHighRange));
                 }
-            } else if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("{} received update of type {}", this.getChannelUID().getId(),
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("{} received update of type {}", this.getChannelUID().getId(),
                         command.getClass().getSimpleName());
             }
         }
@@ -1232,10 +1219,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
          */
         @Override
         public void handleCommand(Command command) {
-            if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("Filter Status channel received update of type {}", command.getClass().getSimpleName());
+            if (!(command instanceof RefreshType)) {
+                logger.debug("Filter Status channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -1311,10 +1296,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
          */
         @Override
         public void handleCommand(Command command) {
-            if (command instanceof RefreshType) {
-                // Status is refreshed periodically by the protocol, no action is needed.
-            } else {
-                logger.warn("Fault code channel received update of type {}", command.getClass().getSimpleName());
+            if (!(command instanceof RefreshType)) {
+                logger.debug("Fault code channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -1351,10 +1334,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
          */
         @Override
         public void handleCommand(Command command) {
-            if (command instanceof RefreshType) {
-                // Status is refreshed periodically by the protocol, no action is needed.
-            } else {
-                logger.warn("Fault time channel received update of type {}", command.getClass().getSimpleName());
+            if (!(command instanceof RefreshType)) {
+                logger.debug("Fault time channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -1403,10 +1384,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
          */
         @Override
         public void handleCommand(Command command) {
-            if (command instanceof RefreshType) {
-                // The state is pushed whenever a message is received, no action is needed.
-            } else {
-                logger.warn("Last seen channel received update of type {}", command.getClass().getSimpleName());
+            if (!(command instanceof RefreshType)) {
+                logger.debug("Last seen channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -1425,7 +1404,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
             long now = System.currentTimeMillis();
             if (now - lastMarkedMillis >= MIN_INTERVAL_MILLIS) {
                 lastMarkedMillis = now;
-                updateState(getChannelUID(), new DateTimeType(ZonedDateTime.now()));
+                updateState(getChannelUID(), new DateTimeType());
             }
         }
     }
@@ -1467,10 +1446,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
          */
         @Override
         public void handleCommand(Command command) {
-            if (command instanceof RefreshType) {
-                // Status is refreshed periodically by the protocol, no action is needed.
-            } else {
-                logger.warn("Filter cycle channel received update of type {}", command.getClass().getSimpleName());
+            if (!(command instanceof RefreshType)) {
+                logger.debug("Filter cycle channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -1505,10 +1482,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
          */
         @Override
         public void handleCommand(Command command) {
-            if (command instanceof RefreshType) {
-                // Status is refreshed periodically by the protocol, no action is needed.
-            } else {
-                logger.warn("Filter cycle 2 enabled channel received update of type {}",
+            if (!(command instanceof RefreshType)) {
+                logger.debug("Filter cycle 2 enabled channel received update of type {}",
                         command.getClass().getSimpleName());
             }
         }
@@ -1552,10 +1527,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 if (wantHigh != highRange) {
                     protocol.sendMessage(new BalboaMessage.ToggleMessage(ItemType.TEMPERATURE_RANGE, 0));
                 }
-            } else if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("Temperature Range switch channel received update of type {}",
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("Temperature Range switch channel received update of type {}",
                         command.getClass().getSimpleName());
             }
         }
@@ -1598,10 +1571,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 if (wantReady != isReady) {
                     protocol.sendMessage(new BalboaMessage.ToggleMessage(ItemType.HEAT_MODE, 0));
                 }
-            } else if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("Heat Mode switch channel received update of type {}", command.getClass().getSimpleName());
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("Heat Mode switch channel received update of type {}", command.getClass().getSimpleName());
             }
         }
 
@@ -1669,10 +1640,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 if (highRange == temperatureHighRange) {
                     protocol.sendMessage(new BalboaMessage.SetTemperatureMessage(value, celciusDisplay, highRange));
                 }
-            } else if (command instanceof RefreshType) {
-                // Status is sent continuously by the protocol, no action is needed.
-            } else {
-                logger.warn("{} received update of type {}", this.getChannelUID().getId(),
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("{} received update of type {}", this.getChannelUID().getId(),
                         command.getClass().getSimpleName());
             }
         }
