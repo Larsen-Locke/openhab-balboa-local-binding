@@ -14,6 +14,8 @@ package io.github.larsenlocke.binding.balboa.internal;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.HexFormat;
+
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.junit.jupiter.api.Nested;
@@ -21,13 +23,17 @@ import org.junit.jupiter.api.Test;
 
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.FaultLogResponseMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.FilterCyclesResponseMessage;
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.InformationResponseMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.ItemType;
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.ModuleIdentificationResponseMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.PanelConfigurationResponseMessage;
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.SetFilterCyclesMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.SetTemperatureMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.SetTemperatureScaleMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.SetTimeMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.SettingsRequestMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.SettingsRequestMessage.SettingsType;
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.SetupParametersResponseMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.StatusUpdateMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.ToggleMessage;
 
@@ -147,6 +153,34 @@ public class BalboaMessageTest {
                     new SettingsRequestMessage(SettingsType.FAULT_LOG).getPayload());
             assertArrayEquals(new byte[] { 0x00, 0x00, 0x01 },
                     new SettingsRequestMessage(SettingsType.PANEL).getPayload());
+            assertArrayEquals(new byte[] { 0x04, 0x00, 0x00 },
+                    new SettingsRequestMessage(SettingsType.SETUP_PARAMETERS).getPayload());
+        }
+
+        @Test
+        void targetIsClampedToTheLimitsTheUnitReported() {
+            // A low range of 10..37 °C (as reported by e.g. a BP601) must not be cut at the fallback limit of 26 °C
+            assertArrayEquals(new byte[] { 60 }, new SetTemperatureMessage(30, true, 10, 37).getPayload());
+            assertArrayEquals(new byte[] { 74 }, new SetTemperatureMessage(40, true, 10, 37).getPayload());
+            assertArrayEquals(new byte[] { 20 }, new SetTemperatureMessage(5, true, 10, 37).getPayload());
+        }
+
+        @Test
+        void togglesAddedForPybalboaParity() {
+            assertArrayEquals(new byte[] { 0x3c, 0x00 }, new ToggleMessage(ItemType.HOLD_MODE, 0).getPayload());
+            assertArrayEquals(new byte[] { 0x3d, 0x00 }, new ToggleMessage(ItemType.CIRCULATION_PUMP, 0).getPayload());
+            assertArrayEquals(new byte[] { 0x03, 0x00 },
+                    new ToggleMessage(ItemType.CLEAR_NOTIFICATION, 0).getPayload());
+        }
+
+        @Test
+        void filterCyclesCarryBothCyclesAndTheEnableFlag() {
+            SetFilterCyclesMessage message = new SetFilterCyclesMessage(new byte[] { 8, 20 }, new byte[] { 0, 30 },
+                    new byte[] { 2, 1 }, new byte[] { 0, 15 }, true);
+            assertEquals(0x0abf23, message.getMessageType());
+            assertArrayEquals(new byte[] { 8, 0, 2, 0, (byte) (0x80 | 20), 30, 1, 15 }, message.getPayload());
+            assertEquals(20, new SetFilterCyclesMessage(new byte[] { 8, 20 }, new byte[] { 0, 30 }, new byte[] { 2, 1 },
+                    new byte[] { 0, 15 }, false).getPayload()[4]);
         }
     }
 
@@ -231,6 +265,42 @@ public class BalboaMessageTest {
         void tooShortIsRejected() {
             assertNull(BalboaMessage.fromBuffer(statusUpdate(20)));
         }
+
+        @Test
+        void statusOfARealUnitWithAPendingFilterReminder() {
+            // BP601G1, 30 Oct 2026: running, initialization mode "reminder", reminder "clean filter", 36 °C,
+            // clock 20:59 in 24h format
+            StatusUpdateMessage status = decode(
+                    HexFormat.of().parseHex("7E20FFAF13000348143B00041F1C030C000002000000000120480000003C0000987E"),
+                    StatusUpdateMessage.class);
+            assertEquals(0x00, status.getSpaState());
+            assertEquals(0, status.getItem(ItemType.PRIMING, 0));
+            assertTrue(status.getNotificationPending());
+            assertFalse(status.getPanelLocked());
+            assertEquals(20, status.getTimeHour());
+            assertEquals(59, status.getTimeMinute());
+            assertTrue(status.getTime24h());
+            assertEquals(0, status.getItem(ItemType.HOLD_MODE, 0));
+        }
+
+        @Test
+        void aPendingReminderIsNotPriming() {
+            // Initialization mode 0x03 (reminder) has bit 0 set like 0x01 (priming)
+            StatusUpdateMessage status = decode(statusUpdate(34, 6, 0x03, 14, 0x01), StatusUpdateMessage.class);
+            assertEquals(0, status.getItem(ItemType.PRIMING, 0));
+            assertEquals(1, decode(statusUpdate(34, 6, 0x01, 14, 0x01), StatusUpdateMessage.class)
+                    .getItem(ItemType.PRIMING, 0));
+        }
+
+        @Test
+        void holdModeAndPanelLock() {
+            StatusUpdateMessage status = decode(statusUpdate(34, 5, 0x05, 14, 0x21, 27, 0x10),
+                    StatusUpdateMessage.class);
+            assertEquals(0x05, status.getSpaState());
+            assertEquals(1, status.getItem(ItemType.HOLD_MODE, 0));
+            assertTrue(status.getPanelLocked());
+            assertFalse(status.getNotificationPending());
+        }
     }
 
     @Nested
@@ -291,6 +361,41 @@ public class BalboaMessageTest {
             assertEquals(2, fault.getDaysAgo());
             assertEquals(13, fault.getHour());
             assertEquals(37, fault.getMinute());
+        }
+
+        @Test
+        void systemInformationOfARealUnit() {
+            InformationResponseMessage info = decode(
+                    HexFormat.of().parseHex("7E1A0ABF2464CE2C004250363031473120040B27D30603060000837E"),
+                    InformationResponseMessage.class);
+            assertEquals("BP601G1", info.getModel());
+            assertEquals("M100_206 V44.0", info.getSoftwareVersion());
+        }
+
+        @Test
+        void setupParametersRangeLimits() {
+            SetupParametersResponseMessage setup = decode(
+                    frame(SetupParametersResponseMessage.MESSAGE_TYPE, 0, 0, 50, 99, 80, 104, 0, 0x03, 0),
+                    SetupParametersResponseMessage.class);
+            assertEquals(10.0, setup.getLimit(false, false, true));
+            assertEquals(37.0, setup.getLimit(false, true, true));
+            assertEquals(26.5, setup.getLimit(true, false, true));
+            assertEquals(40.0, setup.getLimit(true, true, true));
+            assertEquals(99.0, setup.getLimit(false, true, false));
+            assertEquals(2, setup.getPumpCount());
+        }
+
+        @Test
+        void moduleIdentification() {
+            int[] payload = new int[25];
+            int[] mac = { 0x00, 0x15, 0x27, 0xc3, 0x29, 0xdb };
+            System.arraycopy(mac, 0, payload, 3, mac.length);
+            int[] idigi = { 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x15, 0x27, 0xff, 0xff, 0xc3, 0x29, 0xdb };
+            System.arraycopy(idigi, 0, payload, 9, idigi.length);
+            ModuleIdentificationResponseMessage module = decode(
+                    frame(ModuleIdentificationResponseMessage.MESSAGE_TYPE, payload),
+                    ModuleIdentificationResponseMessage.class);
+            assertEquals("00:15:27:c3:29:db", module.getMacAddress());
         }
 
         @Test

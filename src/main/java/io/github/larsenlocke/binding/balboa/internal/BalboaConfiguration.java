@@ -25,4 +25,5 @@ public class BalboaConfiguration {
     public int port;
     public int reconnectInterval;
     public int pollingInterval;
+    public boolean syncClock = false;
 }

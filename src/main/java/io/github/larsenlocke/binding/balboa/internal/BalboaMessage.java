@@ -45,6 +45,8 @@ public class BalboaMessage {
         messageTypeMap.put(PanelConfigurationResponseMessage.MESSAGE_TYPE, PanelConfigurationResponseMessage.class);
         messageTypeMap.put(FilterCyclesResponseMessage.MESSAGE_TYPE, FilterCyclesResponseMessage.class);
         messageTypeMap.put(FaultLogResponseMessage.MESSAGE_TYPE, FaultLogResponseMessage.class);
+        messageTypeMap.put(SetupParametersResponseMessage.MESSAGE_TYPE, SetupParametersResponseMessage.class);
+        messageTypeMap.put(ModuleIdentificationResponseMessage.MESSAGE_TYPE, ModuleIdentificationResponseMessage.class);
     }
 
     /**
@@ -63,6 +65,8 @@ public class BalboaMessage {
         TEMPERATURE_RANGE((byte) 0x50, 1),
         HEAT_MODE        ((byte) 0x51, 1),
         HOLD_MODE        ((byte) 0x3C, 1),
+        CIRCULATION_PUMP ((byte) 0x3D, 1),
+        CLEAR_NOTIFICATION((byte) 0x03, 1),
         // Read only (address is zero)
         PRIMING          ((byte) 0x00, 1),
         HEATER           ((byte) 0x00, 1),
@@ -158,6 +162,7 @@ public class BalboaMessage {
             PANEL        (new byte[] { (byte) 0x00, (byte) 0x00, (byte) 0x01 }),
             FILTER_CYCLES(new byte[] { (byte) 0x01, (byte) 0x00, (byte) 0x00 }),
             INFORMATION  (new byte[] { (byte) 0x02, (byte) 0x00, (byte) 0x00 }),
+            SETUP_PARAMETERS(new byte[] { (byte) 0x04, (byte) 0x00, (byte) 0x00 }),
             PREFERENCES  (new byte[] { (byte) 0x08, (byte) 0x00, (byte) 0x00 }),
             // When called with Fault Log, grab the last entry.
             FAULT_LOG    (new byte[] { (byte) 0x20, (byte) 0xFF, (byte) 0x00 });
@@ -246,27 +251,22 @@ public class BalboaMessage {
          * @param highRange Indicates if the temperature is in the high range (otherwise low range)
          */
         public SetTemperatureMessage(double targetTemperature, boolean celcius, boolean highRange) {
-            // The limits and multiplier
-            double low, high, multiplier;
-            if (celcius) {
-                multiplier = 2;
-                if (highRange) {
-                    low = 26.5;
-                    high = 40;
-                } else {
-                    low = 10;
-                    high = 26;
-                }
-            } else {
-                multiplier = 1;
-                if (highRange) {
-                    low = 79;
-                    high = 104;
-                } else {
-                    low = 50;
-                    high = 80;
-                }
-            }
+            this(targetTemperature, celcius, defaultLimit(celcius, highRange, false),
+                    defaultLimit(celcius, highRange, true));
+        }
+
+        /**
+         * Construct a {@link SetTemperatureMessage} for the given temperature, clamped to the given limits. Used once
+         * the unit has reported its actual range limits (see {@link SetupParametersResponseMessage}).
+         *
+         * @param targetTemperature The temperature to set
+         * @param celcius Indicates if the temperature (and the limits) are expressed in celcius (otherwise
+         *            fahrenheit). Note that this must match the current display setting on the unit.
+         * @param low The lowest temperature the active range accepts
+         * @param high The highest temperature the active range accepts
+         */
+        public SetTemperatureMessage(double targetTemperature, boolean celcius, double low, double high) {
+            double multiplier = celcius ? 2 : 1;
 
             // Set the temperature
             if (targetTemperature < low) {
@@ -279,11 +279,73 @@ public class BalboaMessage {
         }
 
         /**
+         * The fallback range limits used until the unit has reported its own (see
+         * {@link SetupParametersResponseMessage}).
+         *
+         * @param celcius whether the limit is wanted in celcius (otherwise fahrenheit)
+         * @param highRange whether the limit is wanted for the high range (otherwise low range)
+         * @param max whether the upper limit is wanted (otherwise the lower)
+         */
+        public static double defaultLimit(boolean celcius, boolean highRange, boolean max) {
+            if (celcius) {
+                return highRange ? (max ? 40 : 26.5) : (max ? 26 : 10);
+            } else {
+                return highRange ? (max ? 104 : 79) : (max ? 80 : 50);
+            }
+        }
+
+        /**
          * Provide the payload. One byte with the temperature
          */
         @Override
         public byte[] getPayload() {
             return new byte[] { targetTemperature };
+        }
+    }
+
+    /**
+     * The {@link SetFilterCyclesMessage} messages are sent to change the filter cycle configuration of the balboa
+     * unit. The unit expects both cycles in one message, so the caller passes the complete configuration (usually
+     * the last one reported, with one field changed).
+     *
+     * The payload layout mirrors {@link FilterCyclesResponseMessage}. It is taken from community protocol
+     * documentation (ccutrer/balboa_worldwide_app) and pybalboa (garbled1/pybalboa).
+     *
+     * @author Thomas Binder
+     */
+    public static class SetFilterCyclesMessage extends BalboaMessage implements BalboaMessage.Outbound {
+        public static final int MESSAGE_TYPE = 0x0abf23;
+        private final byte[] payload = new byte[8];
+
+        /**
+         * Construct a {@link SetFilterCyclesMessage}. Index 0 of each array is filter cycle 1, index 1 is filter
+         * cycle 2.
+         *
+         * @param startHour start hour (0-23) of each cycle
+         * @param startMinute start minute (0-59) of each cycle
+         * @param durationHour duration hours of each cycle
+         * @param durationMinute duration minutes of each cycle
+         * @param filter2Enabled whether filter cycle 2 is enabled (cycle 1 always is)
+         */
+        public SetFilterCyclesMessage(byte[] startHour, byte[] startMinute, byte[] durationHour, byte[] durationMinute,
+                boolean filter2Enabled) {
+            payload[0] = startHour[0];
+            payload[1] = startMinute[0];
+            payload[2] = durationHour[0];
+            payload[3] = durationMinute[0];
+            payload[4] = (byte) ((startHour[1] & 0x7F) | (filter2Enabled ? 0x80 : 0x00));
+            payload[5] = startMinute[1];
+            payload[6] = durationHour[1];
+            payload[7] = durationMinute[1];
+        }
+
+        /**
+         * Provide the payload. Start hour, start minute, duration hours and duration minutes of cycle 1, then the
+         * same for cycle 2 with the enable flag in bit 7 of its start hour.
+         */
+        @Override
+        public byte[] getPayload() {
+            return payload;
         }
     }
 
@@ -386,9 +448,11 @@ public class BalboaMessage {
         private byte blower;
         private boolean[] aux = new boolean[BalboaProtocol.MAX_AUX];
         private boolean celcius, time24h, temperatureHighRange, priming, mister, circulation;
+        private boolean panelLocked, reminderActive, notificationActive;
         byte timeHour, timeMinute;
         double currentTemperature, targetTemperature;
         byte readyState, heatState, filterState;
+        byte spaState;
 
         /**
          * Instantiates a {@link StatusUpdateMessage} from a raw data buffer
@@ -400,13 +464,13 @@ public class BalboaMessage {
             // @formatter:off
             final byte[] unknown = {
                     //     0                  1                  2                  3                  4                  5                  6                  7
-                    (byte) 0b00000000, (byte) 0b00000000, (byte) 0b00000000, (byte) 0b00000000, (byte) 0b00000000, (byte) 0b11111111, (byte) 0b11111110, (byte) 0b00000000,
+                    (byte) 0b00000000, (byte) 0b00000000, (byte) 0b00000000, (byte) 0b00000000, (byte) 0b00000000, (byte) 0b00000000, (byte) 0b00000000, (byte) 0b00000000,
                     //     8                  9                  10                 11                 12                 13                 14                 15
-                    (byte) 0b00000000, (byte) 0b00000000, (byte) 0b11111100, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11110000, (byte) 0b11001011,
+                    (byte) 0b00000000, (byte) 0b00000000, (byte) 0b11111100, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11010000, (byte) 0b11001011,
                     //     16                 17                 18                 19                 20                 21                 22                 23
-                    (byte) 0b00000000, (byte) 0b00111100, (byte) 0b11110001, (byte) 0b11110000, (byte) 0b11100110, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111,
+                    (byte) 0b00000000, (byte) 0b00111100, (byte) 0b11110001, (byte) 0b11110000, (byte) 0b11100110, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111110,
                     //     24                 25                 26                 27                 28                 29                 30                 31
-                    (byte) 0b11111111, (byte) 0b00000000, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111,
+                    (byte) 0b11011111, (byte) 0b00000000, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111, (byte) 0b11111111,
                     //     32,                33
                     (byte) 0b00000000, (byte) 0b00000000
                     };
@@ -418,9 +482,12 @@ public class BalboaMessage {
             // Byte 0: start mark
             // Byte 1: length
             // Byte 2-4: message type
-            // Byte 5: hold mode in 0x05?
-            // Byte 6: Bit 0: priming
-            priming = (buffer[6] & 0x01) != 0;
+            // Byte 5: Spa state (0x00 running, 0x01 initializing, 0x05 hold mode, 0x14 A/B temps on, 0x17 test mode)
+            spaState = buffer[5];
+            // Byte 6: Initialization mode (0x00 idle, 0x01 priming, 0x02 fault, 0x03 reminder, 0x04 stage 1,
+            // 0x05 stage 3, 0x42 stage 2). Priming is the value 0x01, not a bit: a pending reminder (0x03) also has
+            // bit 0 set and was previously misreported as priming.
+            priming = buffer[6] == 0x01;
             // Byte 7: Current Temperature
             currentTemperature = buffer[7] * (celcius ? 0.5 : 1.0);
             // Byte 8: Time Hour
@@ -429,12 +496,15 @@ public class BalboaMessage {
             timeMinute = buffer[9];
             // Byte 10: Bits 0 and 1: Ready State (0 = Ready, 1 = Rest, 3 = Ready in rest)
             readyState = (byte) (buffer[10] & 0x03);
-            // Byte 11: unknown
-            // Byte 12: unknown
-            // Byte 13: unknown
-            // Byte 14: Bit 0: Celcius (otherwise Fahrenheit - determined above), 1: 24h-clock, 2-3: Filter Mode
+            // Byte 11: Reminder type (0x00 none, 0x04 clean filter, 0x0A check pH, 0x09 check sanitizer, 0x1E fault),
+            // not decoded
+            // Byte 12: Sensor A temperature or hold timer (not decoded)
+            // Byte 13: Sensor B temperature (not decoded)
+            // Byte 14: Bit 0: Celcius (otherwise Fahrenheit - determined above), 1: 24h-clock, 2-3: Filter Mode,
+            // 5: panel locked
             time24h = (buffer[14] & 0x02) != 0;
             filterState = (byte) ((buffer[14] >> 2) & 0x03);
+            panelLocked = (buffer[14] & 0x20) != 0;
             // Byte 15: Bit 0-1: unknown, 2: high range (otherwise low range), 3: unknown,
             // 4-5: heatState (off, low, high, ??), 6-7: unknown
             temperatureHighRange = (buffer[15] & 0x04) != 0;
@@ -463,12 +533,15 @@ public class BalboaMessage {
             }
             // Byte 21: unknown
             // Byte 22: unknown
-            // Byte 23: unknown
-            // Byte 24: unknown
+            // Byte 23: Bit 0: reminder pending
+            reminderActive = (buffer[23] & 0x01) != 0;
+            // Byte 24: Bit 5: notification pending
+            notificationActive = (buffer[24] & 0x20) != 0;
             // Byte 25: target temperature
             targetTemperature = buffer[25] * (celcius ? 0.5 : 1.0);
             // Byte 26: unknown
-            // Byte 27: unknown
+            // Byte 27: Bits 4-7: Wi-Fi module state (0 OK, 1 spa not communicating, 2 startup, 3 prime, 4 hold,
+            // 5 panel) - see pybalboa WiFiState, not decoded. Earlier (shorter) message versions do not carry it.
             // Byte 28: unknown -- Note that earlier message versions may be shorter (crc and end mark shifts up)
             // Byte 29: unknown -- Note that earlier message versions may be shorter (crc and end mark shifts up)
             // Byte 30: unknown -- Note that earlier message versions may be shorter (crc and end mark shifts up)
@@ -535,16 +608,18 @@ public class BalboaMessage {
                 case TEMPERATURE_RANGE:
                     return (byte) (temperatureHighRange ? 0x01 : 0x00);
                 case CIRCULATION:
+                case CIRCULATION_PUMP:
                     return (byte) (circulation ? 0x01 : 0x00);
                 case HEATER:
                     return heatState;
                 case PRIMING:
                     return (byte) (priming ? 0x01 : 0x00);
 
+                case HOLD_MODE:
+                    return (byte) (spaState == 0x05 ? 0x01 : 0x00);
+
                 // The meaning of these bits in the status update is not known; their state is not reported.
                 case HEAT_MODE:
-                    return 0;
-                case HOLD_MODE:
                     return 0;
                 default:
                     return 0;
@@ -596,6 +671,48 @@ public class BalboaMessage {
         public double getTemperature(boolean target) {
             return target ? targetTemperature : currentTemperature;
         }
+
+        /**
+         * Get the spa state (0x00 running, 0x01 initializing, 0x05 hold mode, 0x14 A/B temps on, 0x17 test mode)
+         */
+        public int getSpaState() {
+            return spaState & 0xFF;
+        }
+
+        /**
+         * Whether a reminder or a notification is pending on the panel
+         */
+        public boolean getNotificationPending() {
+            return reminderActive || notificationActive;
+        }
+
+        /**
+         * Whether the control panel is locked
+         */
+        public boolean getPanelLocked() {
+            return panelLocked;
+        }
+
+        /**
+         * Get the hour (0-23) of the unit's clock
+         */
+        public int getTimeHour() {
+            return timeHour & 0xFF;
+        }
+
+        /**
+         * Get the minute (0-59) of the unit's clock
+         */
+        public int getTimeMinute() {
+            return timeMinute & 0xFF;
+        }
+
+        /**
+         * Whether the unit displays the time in 24h format
+         */
+        public boolean getTime24h() {
+            return time24h;
+        }
     }
 
     /**
@@ -609,9 +726,122 @@ public class BalboaMessage {
         public static final int MESSAGE_TYPE = 0x0abf24;
         public static final int MESSAGE_LENGTH = 28;
 
+        private final String softwareVersion;
+        private final String model;
+
         public InformationResponseMessage(byte[] buffer) {
-            // Not decoded: none of its content is exposed as a channel.
-            LOGGER.trace("Information Response received");
+            // Layout as decoded by pybalboa (garbled1/pybalboa, SpaClient._parse_system_information):
+            // Byte 5-8: software id and version
+            softwareVersion = String.format("M%d_%d V%d.%d", buffer[5] & 0xFF, buffer[6] & 0xFF, buffer[7] & 0xFF,
+                    buffer[8] & 0xFF);
+            // Byte 9-16: model name (ASCII, space padded)
+            StringBuilder name = new StringBuilder();
+            for (int i = 9; i <= 16; i++) {
+                name.append((char) (buffer[i] & 0xFF));
+            }
+            model = name.toString().trim();
+            // Byte 17: current setup, 18-21: configuration signature, 22: voltage, 23: heater type,
+            // 24-25: DIP switch settings (not decoded)
+
+            LOGGER.trace("Information Response received: model={} software={}", model, softwareVersion);
+        }
+
+        public String getSoftwareVersion() {
+            return softwareVersion;
+        }
+
+        public String getModel() {
+            return model;
+        }
+    }
+
+    /**
+     * The {@link SetupParametersResponseMessage} messages are sent in response to a {@link SettingsRequestMessage} of
+     * type {@link SettingsRequestMessage.SettingsType#SETUP_PARAMETERS}. They report the temperature limits of the
+     * low and high range (always in fahrenheit) and the number of pumps.
+     *
+     * Layout as decoded by pybalboa (garbled1/pybalboa, SpaClient._parse_setup_parameters).
+     *
+     * @author Thomas Binder
+     */
+    public static class SetupParametersResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
+        public static final int MESSAGE_TYPE = 0x0abf25;
+        public static final int MESSAGE_LENGTH = 16;
+
+        private final int lowRangeMin, lowRangeMax, highRangeMin, highRangeMax;
+        private final int pumpCount;
+
+        public SetupParametersResponseMessage(byte[] buffer) {
+            // Byte 5-6: unknown
+            // Byte 7-8: low range minimum/maximum in fahrenheit
+            lowRangeMin = buffer[7] & 0xFF;
+            lowRangeMax = buffer[8] & 0xFF;
+            // Byte 9-10: high range minimum/maximum in fahrenheit
+            highRangeMin = buffer[9] & 0xFF;
+            highRangeMax = buffer[10] & 0xFF;
+            // Byte 11: unknown
+            // Byte 12: pump counter (number of set bits)
+            pumpCount = Integer.bitCount(buffer[12] & 0xFF);
+            // Byte 13: unknown
+
+            LOGGER.trace("Setup Parameters received: low {}-{} F, high {}-{} F, pumps {}", lowRangeMin, lowRangeMax,
+                    highRangeMin, highRangeMax, pumpCount);
+        }
+
+        /**
+         * Gets a range limit.
+         *
+         * @param highRange whether the high range is wanted (otherwise low range)
+         * @param max whether the upper limit is wanted (otherwise the lower)
+         * @param celcius whether the limit is wanted in celcius (rounded to 0.5 like the unit does), otherwise
+         *            fahrenheit
+         */
+        public double getLimit(boolean highRange, boolean max, boolean celcius) {
+            int fahrenheit = highRange ? (max ? highRangeMax : highRangeMin) : (max ? lowRangeMax : lowRangeMin);
+            if (!celcius) {
+                return fahrenheit;
+            }
+            return 0.5 * Math.round(((fahrenheit - 32) / 1.8) / 0.5);
+        }
+
+        public int getPumpCount() {
+            return pumpCount;
+        }
+    }
+
+    /**
+     * The {@link ModuleIdentificationResponseMessage} messages are sent by the Wi-Fi module in response to a
+     * {@link ConfigurationRequestMessage} ("device present"). They report the module's MAC address (and its iDigi
+     * device id used by the Balboa cloud, which is not decoded).
+     *
+     * Layout as decoded by pybalboa (garbled1/pybalboa, SpaClient._parse_module_identification).
+     *
+     * @author Thomas Binder
+     */
+    public static class ModuleIdentificationResponseMessage extends BalboaMessage implements BalboaMessage.Inbound {
+        public static final int MESSAGE_TYPE = 0x0abf94;
+        public static final int MESSAGE_LENGTH = 32;
+
+        private final String macAddress;
+
+        public ModuleIdentificationResponseMessage(byte[] buffer) {
+            // Byte 5-7: unknown
+            // Byte 8-13: MAC address
+            StringBuilder mac = new StringBuilder();
+            for (int i = 8; i <= 13; i++) {
+                if (mac.length() > 0) {
+                    mac.append(':');
+                }
+                mac.append(String.format("%02x", buffer[i] & 0xFF));
+            }
+            macAddress = mac.toString();
+            // Byte 14-29: iDigi device id (not decoded)
+
+            LOGGER.trace("Module Identification received: mac={}", macAddress);
+        }
+
+        public String getMacAddress() {
+            return macAddress;
         }
     }
 

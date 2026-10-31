@@ -12,24 +12,30 @@
  */
 package io.github.larsenlocke.binding.balboa.internal;
 
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 import javax.measure.quantity.Temperature;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.core.i18n.TimeZoneProvider;
 import org.openhab.core.library.types.DateTimeType;
+import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.OpenClosedType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.library.unit.ImperialUnits;
 import org.openhab.core.library.unit.SIUnits;
+import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.Channel;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
@@ -41,12 +47,19 @@ import org.openhab.core.thing.binding.builder.ThingBuilder;
 import org.openhab.core.thing.type.ChannelTypeUID;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
+import org.openhab.core.types.State;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.FaultLogResponseMessage;
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.FilterCyclesResponseMessage;
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.InformationResponseMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.ItemType;
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.ModuleIdentificationResponseMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.PanelConfigurationResponseMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.SettingsRequestMessage.SettingsType;
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.SetupParametersResponseMessage;
+import io.github.larsenlocke.binding.balboa.internal.BalboaMessage.StatusUpdateMessage;
 import io.github.larsenlocke.binding.balboa.internal.BalboaProtocol.Handler;
 import io.github.larsenlocke.binding.balboa.internal.BalboaProtocol.Status;
 
@@ -60,6 +73,8 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
 
     // Logger and configuration fields
     private final Logger logger = LoggerFactory.getLogger(BalboaHandler.class);
+    // The time zone configured in openHAB (regional settings), used for the unit's clock
+    private final TimeZoneProvider timeZoneProvider;
     private BalboaConfiguration config = getConfigAs(BalboaConfiguration.class);
 
     // Instantiate a protocol with this instance as the handler (receiving callbacks)
@@ -329,8 +344,9 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
      *
      * @param thing
      */
-    public BalboaHandler(Thing thing) {
+    public BalboaHandler(Thing thing, TimeZoneProvider timeZoneProvider) {
         super(thing);
+        this.timeZoneProvider = timeZoneProvider;
     }
 
     /**
@@ -526,6 +542,53 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
             channels.addChannel(new FilterCycleTimeChannel(2, FilterCycleField.DURATION, "filter-2-duration",
                     "Filter Cycle 2 Duration"));
             channels.addChannel(new Filter2EnabledChannel());
+            channels.addChannel(new Filter2EnabledSwitch());
+            channels.addChannel(new DerivedChannel("fault-count", "Fault Count", "fault-count", "Number",
+                    m -> m instanceof FaultLogResponseMessage f ? new DecimalType(f.getFaultCount()) : null));
+
+            // Unit state, decoded from the status update (see pybalboa SpaState and the community protocol
+            // documentation ccutrer/balboa_worldwide_app).
+            channels.addChannel(new DerivedChannel("spa-state", "Spa State", "spa-state", "String",
+                    m -> m instanceof StatusUpdateMessage s ? codeState(SPA_STATES, s.getSpaState()) : null));
+            channels.addChannel(new DerivedChannel("notification", "Notification Pending", "notification", "Contact",
+                    m -> m instanceof StatusUpdateMessage s
+                            ? (s.getNotificationPending() ? OpenClosedType.OPEN : OpenClosedType.CLOSED)
+                            : null));
+            channels.addChannel(new ClearNotificationChannel());
+            channels.addChannel(new DerivedChannel("panel-locked", "Panel Locked", "panel-locked", "Contact",
+                    m -> m instanceof StatusUpdateMessage s
+                            ? (s.getPanelLocked() ? OpenClosedType.OPEN : OpenClosedType.CLOSED)
+                            : null));
+            channels.addChannel(new DerivedChannel("heat-state", "Heat State", "heat-state", "String",
+                    m -> m instanceof StatusUpdateMessage s ? codeState(HEAT_STATES, s.getHeatState()) : null));
+            channels.addChannel(new OneSpeedToggle(ItemType.HOLD_MODE, 0, "hold-mode", "Hold Mode", "hold-mode"));
+
+            // The unit's clock
+            channels.addChannel(new SpaClockChannel());
+            channels.addChannel(new Clock24hChannel());
+            channels.addChannel(new DerivedChannel("clock-offset", "Clock Offset", "clock-offset", "Number:Time",
+                    m -> m instanceof StatusUpdateMessage s ? new QuantityType<>(clockOffsetMinutes(s), Units.MINUTE)
+                            : null));
+
+            // Range limits reported by the unit (used to clamp target temperatures before sending)
+            channels.addChannel(new RangeLimitChannel(false, false, "low-range-min", "Low Range Minimum"));
+            channels.addChannel(new RangeLimitChannel(false, true, "low-range-max", "Low Range Maximum"));
+            channels.addChannel(new RangeLimitChannel(true, false, "high-range-min", "High Range Minimum"));
+            channels.addChannel(new RangeLimitChannel(true, true, "high-range-max", "High Range Maximum"));
+
+            // System information and Wi-Fi module identification
+            channels.addChannel(new DerivedChannel("model", "Model", "model", "String",
+                    m -> m instanceof InformationResponseMessage i ? new StringType(i.getModel()) : null));
+            channels.addChannel(new DerivedChannel("software-version", "Software Version", "software-version", "String",
+                    m -> m instanceof InformationResponseMessage i ? new StringType(i.getSoftwareVersion()) : null));
+            channels.addChannel(new DerivedChannel("mac-address", "MAC Address", "mac-address", "String",
+                    m -> m instanceof ModuleIdentificationResponseMessage i ? new StringType(i.getMacAddress())
+                            : null));
+            // Circulation pump control, only if the unit has one (pybalboa toggles it with item code 0x3D)
+            if (config.getCirculation() != 0) {
+                channels.addChannel(new OneSpeedToggle(ItemType.CIRCULATION_PUMP, 0, "circulation-switch",
+                        "Circulation (Switch)", "circulation-switch"));
+            }
 
             // Add pumps based on the configuration message. These can be one- or two-speed (Switch or OFF/LOW/HIGH).
             // Two-speed pumps are not verified on hardware yet (no unit with one available).
@@ -611,7 +674,27 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
             // Update the thing with the channels
             updateThing(builder.build());
 
+            // Replay the settings responses that arrived before the channels existed (system information, setup
+            // parameters, module identification are requested in the same batch as the panel configuration and
+            // may well be answered first).
+            for (BalboaMessage cached : lastSettings.values()) {
+                for (BalboaChannel channel : channels.values()) {
+                    channel.handleUpdate(cached);
+                }
+            }
+
         } else {
+            // Remember the latest settings responses, see the replay above. Status updates are excluded, they are
+            // broadcast continuously anyway.
+            if (!(message instanceof StatusUpdateMessage)) {
+                lastSettings.put(message.getClass(), message);
+            }
+            if (message instanceof SetupParametersResponseMessage) {
+                setupParameters = (SetupParametersResponseMessage) message;
+            } else if (message instanceof FilterCyclesResponseMessage) {
+                filterCycles = (FilterCyclesResponseMessage) message;
+            }
+
             // Any other message type is passed to the respective channels to determine state updates
             for (BalboaChannel channel : channels.values()) {
                 channel.handleUpdate(message);
@@ -649,6 +732,134 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
     // that range (see TemperatureRange#handleUpdate). NaN means "not known yet" (nothing commanded and no status
     // update decoded for that range since startup/reconnect). Same threading rationale as above, hence volatile.
     private volatile double desiredHighTarget = Double.NaN, desiredLowTarget = Double.NaN;
+
+    // Latest settings responses by message class, replayed to the channels when they are (re)built after a panel
+    // configuration message - see onMessage.
+    private final Map<Class<?>, BalboaMessage> lastSettings = new ConcurrentHashMap<>();
+
+    // The range limits reported by the unit (null until received) - used to clamp target temperatures - and the
+    // last reported filter cycle configuration (null until received) - the unit only accepts both cycles at once,
+    // so a change to one field needs the others. Same threading rationale as above, hence volatile.
+    private volatile @Nullable SetupParametersResponseMessage setupParameters;
+    private volatile @Nullable FilterCyclesResponseMessage filterCycles;
+
+    // The unit's clock as last reported, and when the clock was last synchronized (see SpaClockChannel).
+    private volatile int spaHour = -1, spaMinute = -1;
+    private volatile boolean spaTime24h = true;
+    private volatile long lastClockSyncMillis = 0;
+
+    // Codes reported by the unit and the option values the corresponding channels show for them. The labels
+    // (plain text) for each option are in thing-types.xml. Unknown codes are shown as UNKNOWN_<hex code>.
+    // @formatter:off
+    private static final Map<Integer, String> SPA_STATES = Map.of(
+            0x00, "RUNNING",
+            0x01, "INITIALIZING",
+            0x05, "HOLD",
+            0x14, "AB_TEMPS_ON",
+            0x17, "TEST");
+    private static final Map<Integer, String> HEAT_STATES = Map.of(
+            0, "OFF",
+            1, "HEATING",
+            2, "HEAT_WAITING");
+    // @formatter:on
+
+    // Minimum time between two automatic clock corrections, so a unit that does not accept the time does not get
+    // a set time message on every status update.
+    private static final long CLOCK_SYNC_INTERVAL_MILLIS = TimeUnit.MINUTES.toMillis(5);
+
+    /**
+     * Maps a code reported by the unit to the option value of a String channel.
+     */
+    private static StringType codeState(Map<Integer, String> options, int code) {
+        String option = options.get(code);
+        return StringType.valueOf(option != null ? option : String.format("UNKNOWN_%02X", code));
+    }
+
+    /**
+     * How many minutes the unit's clock is ahead of (positive) or behind (negative) the openHAB time, in the range
+     * -720..719 (the unit has no date, so a difference of more than half a day cannot be told apart).
+     */
+    private int clockOffsetMinutes(StatusUpdateMessage status) {
+        LocalTime now = LocalTime.now(timeZoneProvider.getTimeZone());
+        int spa = status.getTimeHour() * 60 + status.getTimeMinute();
+        int local = now.getHour() * 60 + now.getMinute();
+        return Math.floorMod(spa - local + 720, 1440) - 720;
+    }
+
+    /**
+     * Sends a target temperature for the given range, clamped to the range limits the unit reported (see
+     * {@link SetupParametersResponseMessage}) or, until those are known, to the binding's fallback limits.
+     */
+    private void sendTargetTemperature(double value, boolean highRange) {
+        SetupParametersResponseMessage limits = setupParameters;
+        if (limits == null) {
+            protocol.sendMessage(new BalboaMessage.SetTemperatureMessage(value, celciusDisplay, highRange));
+        } else {
+            double low = limits.getLimit(highRange, false, celciusDisplay);
+            double high = limits.getLimit(highRange, true, celciusDisplay);
+            if (value < low || value > high) {
+                logger.debug("Target temperature {} is outside the {} range {}..{}, clamping", value,
+                        highRange ? "high" : "low", low, high);
+            }
+            protocol.sendMessage(new BalboaMessage.SetTemperatureMessage(value, celciusDisplay, low, high));
+        }
+    }
+
+    /**
+     * Parses "HH:MM" (also "H:MM") into minutes, or returns -1 if it is not a valid time of that form.
+     *
+     * @param maxHour the highest allowed hour (23 for a time of day, 24 for a duration)
+     */
+    private static int parseHourMinute(String text, int maxHour) {
+        String[] parts = text.trim().split(":");
+        if (parts.length != 2) {
+            return -1;
+        }
+        try {
+            int hour = Integer.parseInt(parts[0]);
+            int minute = Integer.parseInt(parts[1]);
+            if (hour < 0 || hour > maxHour || minute < 0 || minute > 59
+                    || (hour == maxHour && maxHour == 24 && minute > 0)) {
+                return -1;
+            }
+            return hour * 60 + minute;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * Sends a complete filter cycle configuration based on the last one reported by the unit, with the given
+     * change applied, and asks the unit to report the result.
+     *
+     * @param cycle 1 or 2, the cycle to change (ignored if only filter2Enabled changes)
+     * @param startMinutes new start time in minutes after midnight, or -1 to keep it
+     * @param durationMinutes new duration in minutes, or -1 to keep it
+     * @param filter2Enabled new enable state of cycle 2, or null to keep it
+     */
+    private void sendFilterCycles(int cycle, int startMinutes, int durationMinutes, @Nullable Boolean filter2Enabled) {
+        FilterCyclesResponseMessage current = filterCycles;
+        if (current == null) {
+            logger.warn("Filter cycle configuration not received from the unit yet, cannot change it");
+            return;
+        }
+        byte[] startHour = { current.getStartHour(1), current.getStartHour(2) };
+        byte[] startMinute = { current.getStartMinute(1), current.getStartMinute(2) };
+        byte[] durationHour = { current.getDurationHour(1), current.getDurationHour(2) };
+        byte[] durationMinute = { current.getDurationMinute(1), current.getDurationMinute(2) };
+        if (startMinutes >= 0) {
+            startHour[cycle - 1] = (byte) (startMinutes / 60);
+            startMinute[cycle - 1] = (byte) (startMinutes % 60);
+        }
+        if (durationMinutes >= 0) {
+            durationHour[cycle - 1] = (byte) (durationMinutes / 60);
+            durationMinute[cycle - 1] = (byte) (durationMinutes % 60);
+        }
+        boolean enabled = filter2Enabled != null ? filter2Enabled : current.isFilter2Enabled();
+        protocol.sendMessage(new BalboaMessage.SetFilterCyclesMessage(startHour, startMinute, durationHour,
+                durationMinute, enabled));
+        protocol.sendMessage(new BalboaMessage.SettingsRequestMessage(SettingsType.FILTER_CYCLES));
+    }
 
     /**
      * Channels exposed by the Balboa Unit are handled by classes implementing the {@link BalboaChannel} interface.
@@ -953,9 +1164,13 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 // Switch based on where the user wants to go
                 switch (command.toString()) {
                     case "READY":
-                        // We need to toggle if the first bit is set (REST or READY_IN_REST)
+                        // We need to toggle if the first bit is set (REST or READY_IN_REST). From READY_IN_REST a
+                        // single toggle only goes to REST, it takes a second one to reach READY (as pybalboa does).
                         if ((rawState & 0x01) != 0) {
                             protocol.sendMessage(new BalboaMessage.ToggleMessage(ItemType.HEAT_MODE, 0));
+                            if (rawState == 0x03) {
+                                protocol.sendMessage(new BalboaMessage.ToggleMessage(ItemType.HEAT_MODE, 0));
+                            }
                         }
                         break;
                     case "REST":
@@ -1118,8 +1333,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                     double desired = temperatureHighRange ? desiredHighTarget : desiredLowTarget;
                     double rawState = status.getTemperature(true);
                     if (!Double.isNaN(desired) && rawState >= 0 && Math.abs(desired - rawState) > 0.4) {
-                        protocol.sendMessage(
-                                new BalboaMessage.SetTemperatureMessage(desired, celciusDisplay, temperatureHighRange));
+                        sendTargetTemperature(desired, temperatureHighRange);
                     }
                 }
             }
@@ -1161,8 +1375,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 }
                 // Set the target temperature if the conversion was successful
                 if (target != null) {
-                    protocol.sendMessage(new BalboaMessage.SetTemperatureMessage(target.doubleValue(), celciusDisplay,
-                            temperatureHighRange));
+                    sendTargetTemperature(target.doubleValue(), temperatureHighRange);
                 }
             } else if (!(command instanceof RefreshType)) {
                 logger.debug("{} received update of type {}", this.getChannelUID().getId(),
@@ -1442,11 +1655,25 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
         }
 
         /**
-         * The channel is read only, no action will be taken.
+         * Changes the start time or duration of the filter cycle ("HH:MM"). Durations must be between 00:15 and
+         * 24:00 (as pybalboa enforces).
          */
         @Override
         public void handleCommand(Command command) {
-            if (!(command instanceof RefreshType)) {
+            if (command instanceof StringType) {
+                int minutes = parseHourMinute(command.toString(), field == FilterCycleField.START ? 23 : 24);
+                if (minutes < 0 || (field == FilterCycleField.DURATION && minutes < 15)) {
+                    logger.warn("Invalid {} for {}: '{}' (expected HH:MM{})",
+                            field == FilterCycleField.START ? "start time" : "duration", getChannelUID().getId(),
+                            command, field == FilterCycleField.DURATION ? " between 00:15 and 24:00" : "");
+                    return;
+                }
+                if (field == FilterCycleField.START) {
+                    sendFilterCycles(cycle, minutes, -1, null);
+                } else {
+                    sendFilterCycles(cycle, -1, minutes, null);
+                }
+            } else if (!(command instanceof RefreshType)) {
                 logger.debug("Filter cycle channel received update of type {}", command.getClass().getSimpleName());
             }
         }
@@ -1570,6 +1797,10 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                 boolean isReady = (rawState & 0x01) == 0;
                 if (wantReady != isReady) {
                     protocol.sendMessage(new BalboaMessage.ToggleMessage(ItemType.HEAT_MODE, 0));
+                    // READY_IN_REST -> READY takes two toggles, see HeatMode#handleCommand
+                    if (wantReady && rawState == 0x03) {
+                        protocol.sendMessage(new BalboaMessage.ToggleMessage(ItemType.HEAT_MODE, 0));
+                    }
                 }
             } else if (!(command instanceof RefreshType)) {
                 logger.debug("Heat Mode switch channel received update of type {}", command.getClass().getSimpleName());
@@ -1638,7 +1869,7 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                     desiredLowTarget = value;
                 }
                 if (highRange == temperatureHighRange) {
-                    protocol.sendMessage(new BalboaMessage.SetTemperatureMessage(value, celciusDisplay, highRange));
+                    sendTargetTemperature(value, highRange);
                 }
             } else if (!(command instanceof RefreshType)) {
                 logger.debug("{} received update of type {}", this.getChannelUID().getId(),
@@ -1673,6 +1904,224 @@ public class BalboaHandler extends BaseThingHandler implements Handler {
                             : new QuantityType<Temperature>(desired, ImperialUnits.FAHRENHEIT);
                     updateState(getChannelUID(), state);
                 }
+            }
+        }
+    }
+
+    /**
+     * Read only channel whose state is derived from one message type by a function. The function returns null for
+     * messages it does not handle (the channel then keeps its state).
+     *
+     * @author Thomas Binder
+     */
+    private class DerivedChannel extends BaseBalboaChannel {
+        private final Function<BalboaMessage, @Nullable State> derive;
+
+        protected DerivedChannel(String id, String description, String channelType, String itemType,
+                Function<BalboaMessage, @Nullable State> derive) {
+            super(id, description, channelType, itemType);
+            this.derive = derive;
+        }
+
+        /**
+         * The channel is read only, no action will be taken.
+         */
+        @Override
+        public void handleCommand(Command command) {
+            if (!(command instanceof RefreshType)) {
+                logger.debug("{} received update of type {}", getChannelUID().getId(),
+                        command.getClass().getSimpleName());
+            }
+        }
+
+        /**
+         * Updates the channel state from the messages the function handles.
+         */
+        @Override
+        public void handleUpdate(BalboaMessage message) {
+            State state = derive.apply(message);
+            if (state != null) {
+                updateState(getChannelUID(), state);
+            }
+        }
+    }
+
+    /**
+     * Clears a pending reminder or notification on the panel (toggle item code 0x03, see pybalboa ToggleItemCode
+     * CLEAR_NOTIFICATION). Behaves like a push button: ON sends the request, the channel then falls back to OFF.
+     * Whether something is pending is shown by the notification and reminder channels.
+     *
+     * @author Thomas Binder
+     */
+    private class ClearNotificationChannel extends BaseBalboaChannel {
+        protected ClearNotificationChannel() {
+            super("clear-notification", "Clear Notification", "clear-notification", "Switch");
+        }
+
+        @Override
+        public void handleCommand(Command command) {
+            if (command == OnOffType.ON) {
+                protocol.sendMessage(new BalboaMessage.ToggleMessage(ItemType.CLEAR_NOTIFICATION, 0));
+                updateState(getChannelUID(), OnOffType.OFF);
+            } else if (!(command instanceof RefreshType) && command != OnOffType.OFF) {
+                logger.debug("Clear notification channel received update of type {}",
+                        command.getClass().getSimpleName());
+            }
+        }
+
+        @Override
+        public void handleUpdate(BalboaMessage message) {
+            if (message instanceof StatusUpdateMessage) {
+                updateState(getChannelUID(), OnOffType.OFF);
+            }
+        }
+    }
+
+    /**
+     * The unit's clock as "HH:MM". Accepts "HH:MM" or a DateTime to set it. With the thing configuration
+     * {@code syncClock} enabled, the clock is also corrected automatically whenever it is off by more than a minute
+     * (at most every {@link BalboaHandler#CLOCK_SYNC_INTERVAL_MILLIS}).
+     *
+     * @author Thomas Binder
+     */
+    private class SpaClockChannel extends BaseBalboaChannel {
+        protected SpaClockChannel() {
+            super("spa-time", "Spa Time", "spa-time", "String");
+        }
+
+        @Override
+        public void handleCommand(Command command) {
+            int minutes = -1;
+            if (command instanceof DateTimeType) {
+                ZonedDateTime time = ((DateTimeType) command).getZonedDateTime(timeZoneProvider.getTimeZone());
+                minutes = time.getHour() * 60 + time.getMinute();
+            } else if (command instanceof StringType) {
+                minutes = parseHourMinute(command.toString(), 23);
+            } else if (command instanceof RefreshType) {
+                return;
+            }
+            if (minutes < 0) {
+                logger.warn("Invalid time for spa-time: '{}' (expected HH:MM or a DateTime)", command);
+                return;
+            }
+            protocol.sendMessage(new BalboaMessage.SetTimeMessage(minutes / 60, minutes % 60, spaTime24h));
+        }
+
+        @Override
+        public void handleUpdate(BalboaMessage message) {
+            if (message instanceof StatusUpdateMessage status) {
+                spaHour = status.getTimeHour();
+                spaMinute = status.getTimeMinute();
+                spaTime24h = status.getTime24h();
+                updateState(getChannelUID(), StringType.valueOf(String.format("%02d:%02d", spaHour, spaMinute)));
+
+                // The status only carries whole minutes, so a difference of one minute is normal around the minute
+                // change. Anything more is corrected if enabled.
+                long now = System.currentTimeMillis();
+                if (config.syncClock && Math.abs(clockOffsetMinutes(status)) > 1
+                        && now - lastClockSyncMillis >= CLOCK_SYNC_INTERVAL_MILLIS) {
+                    lastClockSyncMillis = now;
+                    LocalTime local = LocalTime.now(timeZoneProvider.getTimeZone());
+                    logger.info("Spa clock is {} minutes off, setting it to {}", clockOffsetMinutes(status),
+                            String.format("%02d:%02d", local.getHour(), local.getMinute()));
+                    protocol.sendMessage(
+                            new BalboaMessage.SetTimeMessage(local.getHour(), local.getMinute(), spaTime24h));
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether the unit displays the time in 24h format (ON) or 12h format (OFF).
+     *
+     * @author Thomas Binder
+     */
+    private class Clock24hChannel extends BaseBalboaChannel {
+        protected Clock24hChannel() {
+            super("clock-24h", "24h Clock", "clock-24h", "Switch");
+        }
+
+        @Override
+        public void handleCommand(Command command) {
+            if (command instanceof OnOffType) {
+                if (spaHour < 0) {
+                    logger.warn("Spa time not received yet, cannot change the clock format");
+                    return;
+                }
+                protocol.sendMessage(new BalboaMessage.SetTimeMessage(spaHour, spaMinute, command == OnOffType.ON));
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("24h clock channel received update of type {}", command.getClass().getSimpleName());
+            }
+        }
+
+        @Override
+        public void handleUpdate(BalboaMessage message) {
+            if (message instanceof StatusUpdateMessage status) {
+                updateState(getChannelUID(), status.getTime24h() ? OnOffType.ON : OnOffType.OFF);
+            }
+        }
+    }
+
+    /**
+     * A range limit reported by the unit (see {@link SetupParametersResponseMessage}), in the unit's display scale.
+     *
+     * @author Thomas Binder
+     */
+    private class RangeLimitChannel extends BaseBalboaChannel {
+        private final boolean highRange, max;
+
+        protected RangeLimitChannel(boolean highRange, boolean max, String id, String description) {
+            super(id, description, "range-limit", "Number:Temperature");
+            this.highRange = highRange;
+            this.max = max;
+        }
+
+        /**
+         * The channel is read only, no action will be taken.
+         */
+        @Override
+        public void handleCommand(Command command) {
+            if (!(command instanceof RefreshType)) {
+                logger.debug("{} received update of type {}", getChannelUID().getId(),
+                        command.getClass().getSimpleName());
+            }
+        }
+
+        @Override
+        public void handleUpdate(BalboaMessage message) {
+            if (message instanceof SetupParametersResponseMessage limits) {
+                double value = limits.getLimit(highRange, max, celciusDisplay);
+                updateState(getChannelUID(), celciusDisplay ? new QuantityType<Temperature>(value, SIUnits.CELSIUS)
+                        : new QuantityType<Temperature>(value, ImperialUnits.FAHRENHEIT));
+            }
+        }
+    }
+
+    /**
+     * Switch view of whether filter cycle 2 is enabled, writable (unlike the Contact channel filter-2-enabled, which
+     * is kept so existing links keep working).
+     *
+     * @author Thomas Binder
+     */
+    private class Filter2EnabledSwitch extends BaseBalboaChannel {
+        protected Filter2EnabledSwitch() {
+            super("filter-2-enabled-switch", "Filter 2 (Switch)", "filter2-enabled-switch", "Switch");
+        }
+
+        @Override
+        public void handleCommand(Command command) {
+            if (command instanceof OnOffType) {
+                sendFilterCycles(2, -1, -1, command == OnOffType.ON);
+            } else if (!(command instanceof RefreshType)) {
+                logger.debug("Filter cycle 2 enabled switch received update of type {}",
+                        command.getClass().getSimpleName());
+            }
+        }
+
+        @Override
+        public void handleUpdate(BalboaMessage message) {
+            if (message instanceof FilterCyclesResponseMessage cycles) {
+                updateState(getChannelUID(), cycles.isFilter2Enabled() ? OnOffType.ON : OnOffType.OFF);
             }
         }
     }

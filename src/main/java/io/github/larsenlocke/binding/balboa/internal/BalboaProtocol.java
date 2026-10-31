@@ -689,6 +689,10 @@ public class BalboaProtocol {
                     // channels have a value right after connecting instead of waiting for the first poll.
                     writer.sendMessage(new BalboaMessage.SettingsRequestMessage(SettingsType.FILTER_CYCLES));
                     writer.sendMessage(new BalboaMessage.SettingsRequestMessage(SettingsType.FAULT_LOG));
+                    // Range limits (used to clamp target temperatures) and the Wi-Fi module's identification
+                    // ("device present", answered with MAC address and iDigi id), like pybalboa does on connect.
+                    writer.sendMessage(new BalboaMessage.SettingsRequestMessage(SettingsType.SETUP_PARAMETERS));
+                    writer.sendMessage(new BalboaMessage.ConfigurationRequestMessage());
                     setStatus(Status.CONFIGURATION_PENDING, text("online.configuration-pending"));
 
                     // Start the reader
