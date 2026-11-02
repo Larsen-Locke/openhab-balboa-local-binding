@@ -46,6 +46,13 @@
         <role>updated the binding for openHAB 3.0, the version this one continues from</role>
       </roles>
     </contributor>
+    <contributor>
+      <name>Thomas Binder (binderth)</name>
+      <url>https://github.com/binderth</url>
+      <roles>
+        <role>fix for the protocol lock-order deadlocks; clock, spa state, notification, hold, circulation and filter cycle channels</role>
+      </roles>
+    </contributor>
   </contributors>
 
   <properties>

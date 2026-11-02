@@ -27,6 +27,10 @@ ddempsey3 updated that binding for openHAB 3.0 in December 2020
 (https://github.com/ddempsey3/openhab-addons/tree/balboa-3). This add-on continues from that version: it was ported
 to openHAB 5.2 and extended by Larsen-Locke.
 
+Thomas Binder (binderth, https://github.com/binderth) contributed the fix for the lock-order deadlocks between the
+protocol, its writer and the reconnect job, and the clock, spa state, notification, hold, circulation and filter
+cycle channels (release 5.2.1.7).
+
 The original binding was released under the Eclipse Public License 2.0, and so is this add-on. The license headers of
 the source files are kept as they are.
 
@@ -34,4 +38,5 @@ the source files are kept as they are.
 
 Balboa does not publish the protocol of its Wi-Fi module. The message layouts of the fault log and the filter cycles
 are taken from the community protocol documentation at https://github.com/ccutrer/balboa_worldwide_app
-(doc/protocol.md).
+(doc/protocol.md). The decoding of the system information, the setup parameters, the Wi-Fi module identification
+and the further status fields follows pybalboa (https://github.com/garbled1/pybalboa).

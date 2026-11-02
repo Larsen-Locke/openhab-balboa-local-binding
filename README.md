@@ -136,8 +136,9 @@ Drop the resulting `target/io.github.larsenlocke.binding.balboa-*.jar` into your
 
 This binding is based on the Balboa binding written by [Carl Önnheim](https://github.com/carlonnheim/openhab-addons/tree/balboa) in 2020.
 [ddempsey3](https://github.com/ddempsey3/openhab-addons/tree/balboa-3) updated it for openHAB 3.0 in December 2020, and this binding continues from that version: it was ported to openHAB 5.2 and extended by Larsen-Locke.
+[Thomas Binder (binderth)](https://github.com/binderth) contributed the fix for the lock-order deadlocks between the protocol, its writer and the reconnect job, and the clock, spa state, notification, hold, circulation and filter cycle channels.
 
-Balboa does not publish the protocol of its Wi-Fi module. The message layouts of the fault log and the filter cycles are taken from the community protocol documentation of [ccutrer/balboa_worldwide_app](https://github.com/ccutrer/balboa_worldwide_app) (`doc/protocol.md`).
+Balboa does not publish the protocol of its Wi-Fi module. The message layouts of the fault log and the filter cycles are taken from the community protocol documentation of [ccutrer/balboa_worldwide_app](https://github.com/ccutrer/balboa_worldwide_app) (`doc/protocol.md`). The decoding of the system information, the setup parameters, the Wi-Fi module identification and the further status fields follows [pybalboa](https://github.com/garbled1/pybalboa).
 
 It is licensed under the [Eclipse Public License 2.0](LICENSE), like the original binding. The source files keep the copyright line of the openHAB contributors next to the one of Larsen-Locke and contributors, and the `NOTICE` file shipped in the jar states the origin.
 
