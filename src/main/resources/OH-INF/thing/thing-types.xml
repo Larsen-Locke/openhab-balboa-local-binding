@@ -36,6 +36,15 @@
 				<description>Number of seconds to between polling packets.</description>
 				<default>60</default>
 			</parameter>
+			<parameter name="syncClock" type="boolean">
+				<label>Synchronize Clock</label>
+				<description>Set the unit's clock to the openHAB time whenever it is off by more than one minute (checked
+					on
+					every
+					status update, at most every five minutes). Keeps filter cycles on time across daylight saving
+					changes.</description>
+				<default>false</default>
+			</parameter>
 		</config-description>
 	</thing-type>
 	<channel-type id="target-temperature">
@@ -260,8 +269,138 @@
 	<channel-type id="filter-cycle-time">
 		<item-type>String</item-type>
 		<label>Filter Cycle Time</label>
-		<description>Start time or duration of a filter cycle, as HH:MM.</description>
-		<state readOnly="true" pattern="%s"/>
+		<description>Start time or duration of a filter cycle, as HH:MM. Writable: send HH:MM to change it (durations
+			00:15
+			to
+			24:00).</description>
+		<state pattern="%s"/>
+	</channel-type>
+	<channel-type id="filter2-enabled-switch">
+		<item-type>Switch</item-type>
+		<label>Filter 2 (Switch)</label>
+		<description>Enables (ON) or disables (OFF) the second filter cycle. Filter cycle 1 cannot be disabled.</description>
+		<tags>
+			<tag>Switch</tag>
+		</tags>
+	</channel-type>
+	<channel-type id="fault-count">
+		<item-type>Number</item-type>
+		<label>Fault Count</label>
+		<description>Number of entries in the unit's fault log.</description>
+		<state readOnly="true" pattern="%d"/>
+	</channel-type>
+	<channel-type id="spa-state">
+		<item-type>String</item-type>
+		<label>Spa State</label>
+		<description>Operating state of the control unit.</description>
+		<state readOnly="true">
+			<options>
+				<option value="RUNNING">Running</option>
+				<option value="INITIALIZING">Initializing</option>
+				<option value="HOLD">Hold mode</option>
+				<option value="AB_TEMPS_ON">A/B temperatures shown</option>
+				<option value="TEST">Test mode</option>
+			</options>
+		</state>
+	</channel-type>
+	<channel-type id="notification">
+		<item-type>Contact</item-type>
+		<label>Notification Pending</label>
+		<description>OPEN while a reminder or notification is pending on the control panel.</description>
+		<state readOnly="true"/>
+	</channel-type>
+	<channel-type id="clear-notification">
+		<item-type>Switch</item-type>
+		<label>Clear Notification</label>
+		<description>Send ON to clear a pending reminder or notification. Falls back to OFF.</description>
+		<tags>
+			<tag>Switch</tag>
+		</tags>
+	</channel-type>
+	<channel-type id="panel-locked">
+		<item-type>Contact</item-type>
+		<label>Panel Locked</label>
+		<description>OPEN if the control panel is locked.</description>
+		<state readOnly="true"/>
+	</channel-type>
+	<channel-type id="heat-state">
+		<item-type>String</item-type>
+		<label>Heat State</label>
+		<description>Whether the heater is off, heating, or waiting to heat.</description>
+		<state readOnly="true">
+			<options>
+				<option value="OFF">Off</option>
+				<option value="HEATING">Heating</option>
+				<option value="HEAT_WAITING">Waiting to heat</option>
+			</options>
+		</state>
+	</channel-type>
+	<channel-type id="hold-mode">
+		<item-type>Switch</item-type>
+		<label>Hold Mode</label>
+		<description>Hold (standby) mode: pumps and heater stop for maintenance. ON while the unit is in hold mode.</description>
+		<tags>
+			<tag>Switch</tag>
+		</tags>
+	</channel-type>
+	<channel-type id="circulation-switch">
+		<item-type>Switch</item-type>
+		<label>Circulation (Switch)</label>
+		<description>Switches the circulation pump.</description>
+		<tags>
+			<tag>Switch</tag>
+		</tags>
+	</channel-type>
+	<channel-type id="spa-time">
+		<item-type>String</item-type>
+		<label>Spa Time</label>
+		<description>The unit's clock as HH:MM. Send HH:MM or a DateTime to set it.</description>
+		<state pattern="%s"/>
+	</channel-type>
+	<channel-type id="clock-24h">
+		<item-type>Switch</item-type>
+		<label>24h Clock</label>
+		<description>ON if the unit displays the time in 24h format, OFF for 12h format.</description>
+		<tags>
+			<tag>Switch</tag>
+		</tags>
+	</channel-type>
+	<channel-type id="clock-offset">
+		<item-type>Number:Time</item-type>
+		<label>Clock Offset</label>
+		<description>How many minutes the unit's clock is ahead of (positive) or behind (negative) the openHAB time.</description>
+		<state readOnly="true" pattern="%d %unit%"/>
+	</channel-type>
+	<channel-type id="range-limit" advanced="true">
+		<item-type>Number:Temperature</item-type>
+		<label>Range Limit</label>
+		<description>Lowest or highest target temperature the unit accepts in a range. Target temperatures are clamped
+			to
+			these
+			limits before they are sent.</description>
+		<tags>
+			<tag>Setpoint</tag>
+			<tag>Temperature</tag>
+		</tags>
+		<state readOnly="true" pattern="%.1f %unit%"/>
+	</channel-type>
+	<channel-type id="model" advanced="true">
+		<item-type>String</item-type>
+		<label>Model</label>
+		<description>Model of the control unit.</description>
+		<state readOnly="true"/>
+	</channel-type>
+	<channel-type id="software-version" advanced="true">
+		<item-type>String</item-type>
+		<label>Software Version</label>
+		<description>Software id and version of the control unit.</description>
+		<state readOnly="true"/>
+	</channel-type>
+	<channel-type id="mac-address" advanced="true">
+		<item-type>String</item-type>
+		<label>MAC Address</label>
+		<description>MAC address of the Wi-Fi module.</description>
+		<state readOnly="true"/>
 	</channel-type>
 	<channel-type id="filter2-enabled">
 		<item-type>Contact</item-type>

@@ -34,6 +34,7 @@ Wi-Fi module.
 | `port`              | integer | yes      | 4257    | TCP port of the Balboa Wi-Fi module                                  |
 | `reconnectInterval` | integer | yes      | 30      | Seconds before the first reconnect attempt after a disconnect; further attempts back off exponentially, capped at 10 minutes |
 | `pollingInterval`   | integer | yes      | 60      | Seconds between polling requests sent to keep the connection alive   |
+| `syncClock`         | boolean | no       | false   | Set the unit's clock to the openHAB time (regional settings) whenever it is off by more than one minute, at most every five minutes. Keeps filter cycles on time across daylight saving changes |
 
 If the unit stops responding without properly closing the connection (for example if its Wi-Fi module loses
 power), the binding notices that no data has been received for a while, closes the connection itself and goes
@@ -72,8 +73,26 @@ Channels marked _(dynamic)_ are only present if the corresponding equipment is c
 | `last-seen` | `DateTime` | R | When the last message was received from the unit, updated at most every 30 seconds; useful to detect a stale connection (for example with the Expire profile) |
 | `fault-code` | `String` | R | Most recent entry of the unit's fault log, or `NONE` if the log is empty |
 | `fault-time` | `String` | R | When that fault occurred, for example `2 days ago at 14:32` (best effort: the unit only reports the time of day and how many days ago) |
-| `filter-1-start`, `filter-1-duration`, `filter-2-start`, `filter-2-duration` | `String` | R | Start time and duration of the two filter cycles, as `HH:MM` |
+| `filter-1-start`, `filter-1-duration`, `filter-2-start`, `filter-2-duration` | `String` | R/W | Start time and duration of the two filter cycles, as `HH:MM`; send `HH:MM` to change them (durations 00:15 to 24:00) |
 | `filter-2-enabled` | `Contact` | R | Whether filter cycle 2 is enabled (filter cycle 1 cannot be disabled) |
+| `circulation-switch` _(dynamic)_ | `Switch` | R/W | Circulation pump, switchable (only if the unit has one) |
+| `heat-state` | `String` | R | Heater: `OFF`, `HEATING`, `HEAT_WAITING` |
+| `spa-state` | `String` | R | Unit state: `RUNNING`, `INITIALIZING`, `HOLD`, `AB_TEMPS_ON`, `TEST` |
+| `notification` | `Contact` | R | `OPEN` while a reminder or notification is pending |
+| `clear-notification` | `Switch` | W | Send `ON` to clear a pending reminder/notification (push button, falls back to `OFF`) |
+| `panel-locked` | `Contact` | R | `OPEN` if the control panel is locked |
+| `hold-mode` | `Switch` | R/W | Hold (standby) mode for maintenance |
+| `spa-time` | `String` | R/W | The unit's clock as `HH:MM`; send `HH:MM` or a DateTime to set it |
+| `clock-24h` | `Switch` | R/W | Clock display format: `ON` = 24h, `OFF` = 12h |
+| `clock-offset` | `Number:Time` | R | Minutes the unit's clock is ahead of (+) or behind (−) openHAB |
+| `filter-2-enabled-switch` | `Switch` | R/W | Enable/disable filter cycle 2 |
+| `fault-count` | `Number` | R | Number of entries in the fault log |
+| `low-range-min`, `low-range-max`, `high-range-min`, `high-range-max` _(advanced)_ | `Number:Temperature` | R | Target temperature limits the unit reports per range; target temperatures are clamped to them |
+| `model`, `software-version` _(advanced)_ | `String` | R | Model and software version of the control unit |
+| `mac-address` _(advanced)_ | `String` | R | MAC address of the Wi-Fi module |
+
+The `priming` channel now only reports the actual priming mode. Earlier versions also showed it as open while a
+reminder was pending (the unit reports both in the same byte).
 
 ### Target temperature per range
 
