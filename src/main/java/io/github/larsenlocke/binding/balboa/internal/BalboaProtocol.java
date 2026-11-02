@@ -232,6 +232,13 @@ public class BalboaProtocol {
     /**
      * The inner {@link Writer} class provides queued access to the underlying socket.
      *
+     * All of its state is guarded by the monitor of the enclosing {@link BalboaProtocol}, the same monitor
+     * {@link BalboaProtocol#connect(String, int)} and {@link BalboaProtocol#disconnect()} hold. A separate Writer
+     * monitor led to a lock-order deadlock: a failing write ({@link #failed}, which the socket may invoke directly
+     * from inside {@code socket.write()} in {@link #completed}) holds the Writer and needs the protocol for
+     * {@code disconnect()}, while {@code disconnect()} (e.g. from the watchdog) holds the protocol and needs the
+     * Writer for {@link #reset()}. With a single monitor both paths simply re-enter it.
+     *
      * @author Carl Önnheim
      *
      */
@@ -251,11 +258,13 @@ public class BalboaProtocol {
          * Resets a {@link BalboaProtocol.Writer}, should be called between connects (clears the queue).
          *
          */
-        public synchronized void reset() {
-            queue.clear();
-            // A write started on the previous connection never reports back to this writer in a useful way, so it
-            // must not keep the writer busy for the next connection.
-            writeInProgress = false;
+        public void reset() {
+            synchronized (BalboaProtocol.this) {
+                queue.clear();
+                // A write started on the previous connection never reports back to this writer in a useful way, so it
+                // must not keep the writer busy for the next connection.
+                writeInProgress = false;
+            }
         }
 
         /**
@@ -299,30 +308,32 @@ public class BalboaProtocol {
          *
          * @param buffer The buffer to write
          */
-        private synchronized void startWrite(ByteBuffer buffer) {
-            // Queue the item if writing is already in progress
-            if (writeInProgress) {
-                if (queue.size() >= MAX_QUEUE_SIZE) {
-                    // The write session has been stuck for a while (the watchdog, or the configuration timeout
-                    // while the unit is not configured yet, will eventually notice the accompanying read
-                    // silence and force a reconnect). Drop the new message instead of growing the queue without
-                    // bound.
-                    logger.warn(
-                            "Outgoing message queue is full ({} messages), dropping message - the connection may be stuck",
-                            MAX_QUEUE_SIZE);
-                    return;
+        private void startWrite(ByteBuffer buffer) {
+            synchronized (BalboaProtocol.this) {
+                // Queue the item if writing is already in progress
+                if (writeInProgress) {
+                    if (queue.size() >= MAX_QUEUE_SIZE) {
+                        // The write session has been stuck for a while (the watchdog, or the configuration timeout
+                        // while the unit is not configured yet, will eventually notice the accompanying read
+                        // silence and force a reconnect). Drop the new message instead of growing the queue without
+                        // bound.
+                        logger.warn(
+                                "Outgoing message queue is full ({} messages), dropping message - the connection may be stuck",
+                                MAX_QUEUE_SIZE);
+                        return;
+                    }
+                    queue.add(buffer);
+                } else if (socket != null) {
+                    // Otherwise start writing
+                    logger.trace("Write session started");
+                    writeInProgress = true;
+                    write(buffer);
+                } else {
+                    // Not connected right now (e.g. offline or reconnecting). There is nothing to send this on, and
+                    // whoever triggered this (e.g. a command sent to a channel while the unit is unreachable) has no
+                    // way to react to an exception here, so just drop the message instead of failing loudly.
+                    logger.debug("Discarding outgoing message, not connected");
                 }
-                queue.add(buffer);
-            } else if (socket != null) {
-                // Otherwise start writing
-                logger.trace("Write session started");
-                writeInProgress = true;
-                write(buffer);
-            } else {
-                // Not connected right now (e.g. offline or reconnecting). There is nothing to send this on, and
-                // whoever triggered this (e.g. a command sent to a channel while the unit is unreachable) has no
-                // way to react to an exception here, so just drop the message instead of failing loudly.
-                logger.debug("Discarding outgoing message, not connected");
             }
         }
 
@@ -333,17 +344,19 @@ public class BalboaProtocol {
          *
          * @param buffer The buffer to write
          */
-        private synchronized void write(ByteBuffer buffer) {
-            AsynchronousSocketChannel channel = socket;
-            if (channel == null) {
-                writeInProgress = false;
-                return;
-            }
-            try {
-                channel.write(buffer, buffer, this);
-            } catch (NotYetConnectedException | WritePendingException | ShutdownChannelGroupException e) {
-                writeInProgress = false;
-                logger.debug("Discarding outgoing message, the write could not be started: {}", e.toString());
+        private void write(ByteBuffer buffer) {
+            synchronized (BalboaProtocol.this) {
+                AsynchronousSocketChannel channel = socket;
+                if (channel == null) {
+                    writeInProgress = false;
+                    return;
+                }
+                try {
+                    channel.write(buffer, buffer, this);
+                } catch (NotYetConnectedException | WritePendingException | ShutdownChannelGroupException e) {
+                    writeInProgress = false;
+                    logger.debug("Discarding outgoing message, the write could not be started: {}", e.toString());
+                }
             }
         }
 
@@ -352,42 +365,46 @@ public class BalboaProtocol {
          * if any.
          */
         @Override
-        public synchronized void completed(@Nullable Integer result, ByteBuffer buffer) {
-            // Check if the message was written in full, otherwise resume the write
-            if (buffer.position() < buffer.limit()) {
-                logger.trace("Partial write, resuming");
-                if (socket != null) {
-                    write(buffer);
-                    return;
-                } else {
-                    // This cannot happen ("failed" would be called instead), but handled for style
-                    writeInProgress = false;
+        public void completed(@Nullable Integer result, ByteBuffer buffer) {
+            synchronized (BalboaProtocol.this) {
+                // Check if the message was written in full, otherwise resume the write
+                if (buffer.position() < buffer.limit()) {
+                    logger.trace("Partial write, resuming");
+                    if (socket != null) {
+                        write(buffer);
+                        return;
+                    } else {
+                        // This cannot happen ("failed" would be called instead), but handled for style
+                        writeInProgress = false;
+                    }
                 }
-            }
 
-            // Check if there is anything queued
-            if (queue.isEmpty()) {
-                // If not, we are done with this write session
-                logger.trace("Write session ended");
-                writeInProgress = false;
-            } else {
-                // Something is on the queue, trigger the next write
-                logger.trace("Message queued, write session continued");
-                ByteBuffer b = queue.remove();
-                if (socket != null) {
-                    write(b);
-                } else {
-                    // This cannot happen ("failed" would be called instead), but handled for style
+                // Check if there is anything queued
+                if (queue.isEmpty()) {
+                    // If not, we are done with this write session
+                    logger.trace("Write session ended");
                     writeInProgress = false;
+                } else {
+                    // Something is on the queue, trigger the next write
+                    logger.trace("Message queued, write session continued");
+                    ByteBuffer b = queue.remove();
+                    if (socket != null) {
+                        write(b);
+                    } else {
+                        // This cannot happen ("failed" would be called instead), but handled for style
+                        writeInProgress = false;
+                    }
                 }
             }
         }
 
         @Override
-        public synchronized void failed(@Nullable Throwable exc, ByteBuffer buffer) {
-            // Something failed. Disconnect the protocol
-            writeInProgress = false;
-            disconnect();
+        public void failed(@Nullable Throwable exc, ByteBuffer buffer) {
+            synchronized (BalboaProtocol.this) {
+                // Something failed. Disconnect the protocol
+                writeInProgress = false;
+                disconnect();
+            }
         }
     }
 
@@ -406,8 +423,12 @@ public class BalboaProtocol {
          * Resets a {@link BalboaProtocol.Reader}, should be called between connects
          *
          */
-        public synchronized void reset() {
-            readBuffer.clear();
+        public void reset() {
+            // Guarded by the protocol's monitor like the Writer (see there), so that disconnect() never needs
+            // a second monitor while holding the protocol's.
+            synchronized (BalboaProtocol.this) {
+                readBuffer.clear();
+            }
         }
 
         /**
@@ -709,10 +730,13 @@ public class BalboaProtocol {
                     }
                     logger.debug("{}", detail);
                     setStatus(Status.OFFLINE, detail);
-                    // Mark the socket as not valid and reset the reader/writer
-                    socket = null;
-                    reader.reset();
-                    writer.reset();
+                    // Mark the socket as not valid and reset the reader/writer. This runs on a socket callback
+                    // thread, so take the protocol's monitor like every other access to the socket field.
+                    synchronized (BalboaProtocol.this) {
+                        socket = null;
+                        reader.reset();
+                        writer.reset();
+                    }
                 }
             });
             logger.debug("Balboa protocol connecting");
