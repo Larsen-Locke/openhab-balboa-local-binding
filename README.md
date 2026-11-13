@@ -40,6 +40,9 @@ If the unit stops responding without properly closing the connection (for exampl
 power), the binding notices that no data has been received for a while, closes the connection itself and goes
 through the same reconnect logic as for a normal disconnect.
 
+The binding and the Balboa app cannot be used at the same time. To use the app, disable the thing in openHAB first and
+enable it again afterwards.
+
 ### `balboa.things` Example
 
 ```java
